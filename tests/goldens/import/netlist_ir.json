@@ -1,0 +1,289 @@
+{
+  "comps": [
+    {
+      "entry_name": "CP_Radial_D10.0mm_P5.00mm",
+      "ref": "C1"
+    },
+    {
+      "entry_name": "C_Disc_D4.7mm_W2.5mm_P5.00mm",
+      "ref": "C2"
+    },
+    {
+      "entry_name": "Altech_AK300_1x02_P5.00mm_45-Degree",
+      "ref": "P1"
+    },
+    {
+      "entry_name": "Altech_AK300_1x02_P5.00mm_45-Degree",
+      "ref": "P2"
+    },
+    {
+      "entry_name": "Altech_AK300_1x02_P5.00mm_45-Degree",
+      "ref": "P3"
+    },
+    {
+      "entry_name": "Altech_AK300_1x02_P5.00mm_45-Degree",
+      "ref": "P4"
+    },
+    {
+      "entry_name": "MountingHole_3.2mm_M3_DIN965_Pad",
+      "ref": "P5"
+    },
+    {
+      "entry_name": "MountingHole_3.2mm_M3_DIN965_Pad",
+      "ref": "P6"
+    },
+    {
+      "entry_name": "MountingHole_3.2mm_M3_DIN965_Pad",
+      "ref": "P7"
+    },
+    {
+      "entry_name": "MountingHole_3.2mm_M3_DIN965_Pad",
+      "ref": "P8"
+    },
+    {
+      "entry_name": "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal",
+      "ref": "R1"
+    },
+    {
+      "entry_name": "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal",
+      "ref": "R2"
+    },
+    {
+      "entry_name": "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal",
+      "ref": "R3"
+    },
+    {
+      "entry_name": "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal",
+      "ref": "R4"
+    },
+    {
+      "entry_name": "Valve_ECC-83-1",
+      "ref": "U1"
+    }
+  ],
+  "libparts": [
+    {
+      "lib": "ecc83-pp",
+      "part": "C"
+    },
+    {
+      "lib": "ecc83-pp",
+      "part": "CONN_1"
+    },
+    {
+      "lib": "ecc83-pp",
+      "part": "CONN_2"
+    },
+    {
+      "lib": "ecc83-pp",
+      "part": "CP"
+    },
+    {
+      "lib": "ecc83-pp",
+      "part": "ECC83"
+    },
+    {
+      "lib": "ecc83-pp",
+      "part": "R"
+    }
+  ],
+  "nets": [
+    {
+      "name": "GND",
+      "nodes": [
+        [
+          "C1",
+          "2"
+        ],
+        [
+          "P1",
+          "1"
+        ],
+        [
+          "P2",
+          "2"
+        ],
+        [
+          "P3",
+          "2"
+        ],
+        [
+          "R2",
+          "2"
+        ],
+        [
+          "R3",
+          "2"
+        ],
+        [
+          "R4",
+          "2"
+        ]
+      ]
+    },
+    {
+      "name": "Net-(P1-PM)",
+      "nodes": [
+        [
+          "P1",
+          "2"
+        ],
+        [
+          "R4",
+          "1"
+        ],
+        [
+          "U1",
+          "2"
+        ]
+      ]
+    },
+    {
+      "name": "Net-(P2-P1)",
+      "nodes": [
+        [
+          "C2",
+          "1"
+        ],
+        [
+          "P2",
+          "1"
+        ],
+        [
+          "R3",
+          "1"
+        ]
+      ]
+    },
+    {
+      "name": "Net-(P3-P1)",
+      "nodes": [
+        [
+          "C1",
+          "1"
+        ],
+        [
+          "P3",
+          "1"
+        ],
+        [
+          "U1",
+          "6"
+        ]
+      ]
+    },
+    {
+      "name": "Net-(P4-P1)",
+      "nodes": [
+        [
+          "P4",
+          "1"
+        ],
+        [
+          "U1",
+          "9"
+        ]
+      ]
+    },
+    {
+      "name": "Net-(P4-PM)",
+      "nodes": [
+        [
+          "P4",
+          "2"
+        ],
+        [
+          "U1",
+          "4"
+        ],
+        [
+          "U1",
+          "5"
+        ]
+      ]
+    },
+    {
+      "name": "Net-(U1A-G)",
+      "nodes": [
+        [
+          "R1",
+          "1"
+        ],
+        [
+          "U1",
+          "1"
+        ],
+        [
+          "U1",
+          "7"
+        ]
+      ]
+    },
+    {
+      "name": "Net-(U1A-K)",
+      "nodes": [
+        [
+          "C2",
+          "2"
+        ],
+        [
+          "R1",
+          "2"
+        ],
+        [
+          "U1",
+          "8"
+        ]
+      ]
+    },
+    {
+      "name": "Net-(U1B-K)",
+      "nodes": [
+        [
+          "R2",
+          "1"
+        ],
+        [
+          "U1",
+          "3"
+        ]
+      ]
+    },
+    {
+      "name": "unconnected-(P5-Pad1)",
+      "nodes": [
+        [
+          "P5",
+          "1"
+        ]
+      ]
+    },
+    {
+      "name": "unconnected-(P6-Pad1)",
+      "nodes": [
+        [
+          "P6",
+          "1"
+        ]
+      ]
+    },
+    {
+      "name": "unconnected-(P7-Pad1)",
+      "nodes": [
+        [
+          "P7",
+          "1"
+        ]
+      ]
+    },
+    {
+      "name": "unconnected-(P8-Pad1)",
+      "nodes": [
+        [
+          "P8",
+          "1"
+        ]
+      ]
+    }
+  ]
+}

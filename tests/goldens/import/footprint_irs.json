@@ -1,0 +1,401 @@
+{
+  "Altech_AK300_1x02_P5.00mm_45-Degree": {
+    "courtyard": {
+      "max": {
+        "x": 7750000,
+        "y": 6750000
+      },
+      "min": {
+        "x": -2750000,
+        "y": -6250000
+      }
+    },
+    "entry_name": "Altech_AK300_1x02_P5.00mm_45-Degree",
+    "pads": [
+      {
+        "drill": 1500000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 0,
+          "y": 0
+        },
+        "number": "1",
+        "shape_enum": "rect",
+        "size": [
+          3000000,
+          3000000
+        ]
+      },
+      {
+        "drill": 1500000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 5000000,
+          "y": 0
+        },
+        "number": "2",
+        "shape_enum": "circle",
+        "size": [
+          3000000,
+          3000000
+        ]
+      }
+    ]
+  },
+  "CP_Radial_D10.0mm_P5.00mm": {
+    "courtyard": {
+      "center": {
+        "x": 2500000,
+        "y": 0
+      },
+      "end": {
+        "x": 7750000,
+        "y": 0
+      },
+      "radius_sq": 27562500000000
+    },
+    "entry_name": "CP_Radial_D10.0mm_P5.00mm",
+    "pads": [
+      {
+        "drill": 1000000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 0,
+          "y": 0
+        },
+        "number": "1",
+        "shape_enum": "rect",
+        "size": [
+          2000000,
+          2000000
+        ]
+      },
+      {
+        "drill": 1000000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 5000000,
+          "y": 0
+        },
+        "number": "2",
+        "shape_enum": "circle",
+        "size": [
+          2000000,
+          2000000
+        ]
+      }
+    ]
+  },
+  "C_Disc_D4.7mm_W2.5mm_P5.00mm": {
+    "courtyard": {
+      "max": {
+        "x": 6050000,
+        "y": 1500000
+      },
+      "min": {
+        "x": -1050000,
+        "y": -1500000
+      }
+    },
+    "entry_name": "C_Disc_D4.7mm_W2.5mm_P5.00mm",
+    "pads": [
+      {
+        "drill": 800000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 0,
+          "y": 0
+        },
+        "number": "1",
+        "shape_enum": "circle",
+        "size": [
+          1600000,
+          1600000
+        ]
+      },
+      {
+        "drill": 800000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 5000000,
+          "y": 0
+        },
+        "number": "2",
+        "shape_enum": "circle",
+        "size": [
+          1600000,
+          1600000
+        ]
+      }
+    ]
+  },
+  "MountingHole_3.2mm_M3_DIN965_Pad": {
+    "courtyard": {
+      "center": {
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "x": 3050000,
+        "y": 0
+      },
+      "radius_sq": 9302500000000
+    },
+    "entry_name": "MountingHole_3.2mm_M3_DIN965_Pad",
+    "pads": [
+      {
+        "drill": 3200000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 0,
+          "y": 0
+        },
+        "number": "1",
+        "shape_enum": "circle",
+        "size": [
+          5600000,
+          5600000
+        ]
+      }
+    ]
+  },
+  "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal": {
+    "courtyard": {
+      "max": {
+        "x": 8670000,
+        "y": 1500000
+      },
+      "min": {
+        "x": -1050000,
+        "y": -1500000
+      }
+    },
+    "entry_name": "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal",
+    "pads": [
+      {
+        "drill": 800000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 0,
+          "y": 0
+        },
+        "number": "1",
+        "shape_enum": "circle",
+        "size": [
+          1600000,
+          1600000
+        ]
+      },
+      {
+        "drill": 800000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 7620000,
+          "y": 0
+        },
+        "number": "2",
+        "shape_enum": "oval",
+        "size": [
+          1600000,
+          1600000
+        ]
+      }
+    ]
+  },
+  "Valve_ECC-83-1": {
+    "courtyard": {
+      "center": {
+        "x": 0,
+        "y": 50000
+      },
+      "end": {
+        "x": 0,
+        "y": -10550000
+      },
+      "radius_sq": 112360000000000
+    },
+    "entry_name": "Valve_ECC-83-1",
+    "pads": [
+      {
+        "drill": 1020000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 3450000,
+          "y": 4800000
+        },
+        "number": "1",
+        "shape_enum": "circle",
+        "size": [
+          2030000,
+          2030000
+        ]
+      },
+      {
+        "drill": 1020000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 5600000,
+          "y": 1870000
+        },
+        "number": "2",
+        "shape_enum": "circle",
+        "size": [
+          2030000,
+          2030000
+        ]
+      },
+      {
+        "drill": 1020000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 5600000,
+          "y": -1780000
+        },
+        "number": "3",
+        "shape_enum": "circle",
+        "size": [
+          2030000,
+          2030000
+        ]
+      },
+      {
+        "drill": 1020000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 3450000,
+          "y": -4710000
+        },
+        "number": "4",
+        "shape_enum": "circle",
+        "size": [
+          2030000,
+          2030000
+        ]
+      },
+      {
+        "drill": 1020000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": 0,
+          "y": -5850000
+        },
+        "number": "5",
+        "shape_enum": "circle",
+        "size": [
+          2030000,
+          2030000
+        ]
+      },
+      {
+        "drill": 1020000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": -3460000,
+          "y": -4710000
+        },
+        "number": "6",
+        "shape_enum": "circle",
+        "size": [
+          2030000,
+          2030000
+        ]
+      },
+      {
+        "drill": 1020000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": -5610000,
+          "y": -1780000
+        },
+        "number": "7",
+        "shape_enum": "circle",
+        "size": [
+          2030000,
+          2030000
+        ]
+      },
+      {
+        "drill": 1020000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": -5610000,
+          "y": 1830000
+        },
+        "number": "8",
+        "shape_enum": "circle",
+        "size": [
+          2030000,
+          2030000
+        ]
+      },
+      {
+        "drill": 1020000,
+        "layers": [
+          "*.Cu",
+          "*.Mask"
+        ],
+        "local_pos": {
+          "x": -3460000,
+          "y": 4800000
+        },
+        "number": "9",
+        "shape_enum": "circle",
+        "size": [
+          2030000,
+          2030000
+        ]
+      }
+    ]
+  }
+}

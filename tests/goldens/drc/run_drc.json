@@ -1,0 +1,40 @@
+[
+  {
+    "description": "Courtyards overlap: placement:C1 and placement:C2",
+    "locations": [
+      {
+        "x": 30000000,
+        "y": 22000000
+      },
+      {
+        "x": 30000000,
+        "y": 22000000
+      }
+    ],
+    "offending_refs": [
+      "placement:C1",
+      "placement:C2"
+    ],
+    "severity": "error",
+    "type": "courtyards_overlap"
+  },
+  {
+    "description": "Courtyards overlap: placement:R1 and placement:R2",
+    "locations": [
+      {
+        "x": 8000000,
+        "y": 6000000
+      },
+      {
+        "x": 8000000,
+        "y": 6000000
+      }
+    ],
+    "offending_refs": [
+      "placement:R1",
+      "placement:R2"
+    ],
+    "severity": "error",
+    "type": "courtyards_overlap"
+  }
+]

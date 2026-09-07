@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environment
+.venv/
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+
+# Agent session plumbing (plans, scratch)
+.opencode/
+
+# Prototype scratch output
+prototype_*.txt
+prototype_*.kicad_pcb
+
+# KiCad demo project — commit only the ecc83 fixture subset (see kicad_demo/ecc83/README.md)
+kicad_demo/*
+!kicad_demo/ecc83/
+kicad_demo/ecc83/*
+!kicad_demo/ecc83/README.md
+!kicad_demo/ecc83/ecc83-pp.net
+!kicad_demo/ecc83/footprints.pretty/
+kicad_demo/ecc83/footprints.pretty/*
+!kicad_demo/ecc83/footprints.pretty/*.kicad_mod

@@ -8,3 +8,14 @@ A Python engine that models the physical realization of a circuit — bridging t
 2. Pluggable simulations (SI, PI, thermal, EM), feeding violations back for iterative improvement
 3. Support for additional EDA formats beyond KiCad
 4. Integration with external AI orchestrator tooling (MCP, agent loops)
+
+## Development
+
+Requires [uv](https://docs.astral.sh/uv/).
+
+```console
+uv sync                     # set up the environment (Python 3.12)
+uv run ruff check           # lint
+uv run ruff format --check  # format check
+uv run pytest               # fast-tier tests
+```
