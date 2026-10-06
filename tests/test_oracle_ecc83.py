@@ -154,6 +154,23 @@ class TestBothBoards:
         report = oracle_drc(name, make_board(), tmp_path)
         assert oracle_violation_count(report, "invalid_outline") == 0
 
+    def test_containment_is_clean_with_no_oracle_analogue(
+        self, tmp_path, name, make_board
+    ):
+        """ADR-0018: the oracle has no containment check to pair with — ours
+        counts 0 on the acceptance board (the EdgeMounts state its
+        overhangs), and the oracle never emits the type. Per-type only, no
+        parity claim (ADR-0010's assertion-5 posture, extended)."""
+        board = make_board()
+        ours = sum(
+            1
+            for violation in run_drc(board)
+            if violation.type is ViolationType.COURTYARD_OUTSIDE_OUTLINE
+        )
+        assert ours == 0
+        report = oracle_drc(name, board, tmp_path)
+        assert oracle_violation_count(report, "courtyard_outside_outline") == 0
+
 
 class TestCourtyardsOverlapParity:
     """ADR-0010 assertion 5 — per-type counts, clean 0 = 0, overlapped 1 = 1."""

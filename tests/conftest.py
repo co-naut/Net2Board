@@ -17,15 +17,22 @@ library-embedder path — boards from IR, no fixture files:
 - outline is a 40 mm x 30 mm board in integer nm.
 
 ``ECC83_NETLIST`` / ``ECC83_FP_DIR`` / ``load_ecc83_spec()`` serve the
-file-driven loader tests over the committed fixture.
+file-driven loader tests over the committed ecc83 fixture;
+``TINY_NETLIST`` / ``TINY_FP_DIR`` / ``load_tiny_spec()`` do the same over
+the tiny_tapeout hard-placement fixture (#30) — 150 comps, 4 copper
+layers, SMD-majority pads.
 """
 
 import json
 import os
+import shutil
 from pathlib import Path
+
+import pytest
 
 from net2board.boardspec import BoardSpec
 from net2board.build import build_board
+from net2board.examples.session import measure_acceptance, run_tiny_session
 from net2board.geometry import Circle, Point, Rectangle
 from net2board.ir import CompIR, FootprintIR, NetIR, NetlistIR, PadIR
 
@@ -33,6 +40,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ECC83_DIR = REPO_ROOT / "kicad_demo" / "ecc83"
 ECC83_NETLIST = ECC83_DIR / "ecc83-pp.net"
 ECC83_FP_DIR = ECC83_DIR / "footprints.pretty"
+TINY_DIR = REPO_ROOT / "kicad_demo" / "tiny_tapeout"
+TINY_NETLIST = TINY_DIR / "tinytapeout.net"
+TINY_FP_DIR = TINY_DIR / "footprints.pretty"
 
 RES_PADS = (
     PadIR(
@@ -131,6 +141,15 @@ def load_ecc83_spec() -> BoardSpec:
     return BoardSpec.from_files(ECC83_NETLIST, ECC83_FP_DIR, OUTLINE, STACKUP)
 
 
+TINY_OUTLINE = Rectangle(min=Point(0, 0), max=Point(104_500_000, 81_000_000))
+TINY_STACKUP = ("F.Cu", "In1.Cu", "In2.Cu", "B.Cu")
+
+
+def load_tiny_spec() -> BoardSpec:
+    """The tiny_tapeout fixture loaded through the file-driven path."""
+    return BoardSpec.from_files(TINY_NETLIST, TINY_FP_DIR, TINY_OUTLINE, TINY_STACKUP)
+
+
 def assert_golden(dir_name: str, name: str, value, regen_hint: str) -> None:
     """Assert ``value`` renders byte-equal to a sorted-keys JSON golden.
 
@@ -163,3 +182,21 @@ def _check_golden(dir_name: str, name: str, rendered: str, regen_hint: str) -> N
         return
     assert path.exists(), f"{name} missing — {regen_hint}"
     assert path.read_text() == rendered, f"{name} stale — {regen_hint}"
+
+
+@pytest.fixture(scope="session")
+def tiny_session_record():
+    """The tiny_tapeout headline (ADR-0019's slow-tier acceptance), run
+    once per slow invocation — a full-budget solve over 150 components."""
+    return run_tiny_session()
+
+
+@pytest.fixture(scope="session")
+def tiny_acceptance():
+    """The slow-tier measurement face, once per slow invocation — two
+    headline solves, the candidate-count derivation, and the two wrapper
+    loops (minutes of deliberate wall time). The wrapper leg is real
+    kicad-cli work, so the oracle's absence is a skip, not a failure."""
+    if shutil.which("kicad-cli") is None:
+        pytest.skip("kicad-cli absent — the wrapper baseline needs the oracle")
+    return measure_acceptance()

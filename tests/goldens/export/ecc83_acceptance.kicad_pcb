@@ -34,6 +34,10 @@
 	(footprint "Net2Board:CP_Radial_D10.0mm_P5.00mm"
 		(layer "B.Cu")
 		(at 14.000000 21.000000 0)
+		(property "Reference" "C1"
+			(at 0 0 0)
+			(layer "B.SilkS")
+		)
 		(fp_circle
 			(center -2.500000 0.000000)
 			(end -7.750000 0.000000)
@@ -58,6 +62,10 @@
 	(footprint "Net2Board:C_Disc_D4.7mm_W2.5mm_P5.00mm"
 		(layer "F.Cu")
 		(at 16.200000 1.500000 0)
+		(property "Reference" "C2"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_rect
 			(start -1.050000 -1.500000)
 			(end 6.050000 1.500000)
@@ -82,6 +90,10 @@
 	(footprint "Net2Board:Altech_AK300_1x02_P5.00mm_45-Degree"
 		(layer "F.Cu")
 		(at 1.000000 4.000000 0)
+		(property "Reference" "P1"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_rect
 			(start -2.750000 -6.250000)
 			(end 7.750000 6.750000)
@@ -106,6 +118,10 @@
 	(footprint "Net2Board:Altech_AK300_1x02_P5.00mm_45-Degree"
 		(layer "F.Cu")
 		(at 1.000000 25.000000 0)
+		(property "Reference" "P2"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_rect
 			(start -2.750000 -6.250000)
 			(end 7.750000 6.750000)
@@ -130,6 +146,10 @@
 	(footprint "Net2Board:Altech_AK300_1x02_P5.00mm_45-Degree"
 		(layer "F.Cu")
 		(at 39.000000 4.000000 0)
+		(property "Reference" "P3"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_rect
 			(start -2.750000 -6.250000)
 			(end 7.750000 6.750000)
@@ -154,6 +174,10 @@
 	(footprint "Net2Board:Altech_AK300_1x02_P5.00mm_45-Degree"
 		(layer "F.Cu")
 		(at 39.000000 25.000000 0)
+		(property "Reference" "P4"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_rect
 			(start -2.750000 -6.250000)
 			(end 7.750000 6.750000)
@@ -178,6 +202,10 @@
 	(footprint "Net2Board:MountingHole_3.2mm_M3_DIN965_Pad"
 		(layer "F.Cu")
 		(at 25.500000 1.500000 0)
+		(property "Reference" "P5"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_circle
 			(center 0.000000 0.000000)
 			(end 3.050000 0.000000)
@@ -195,6 +223,10 @@
 	(footprint "Net2Board:MountingHole_3.2mm_M3_DIN965_Pad"
 		(layer "F.Cu")
 		(at 33.000000 28.000000 0)
+		(property "Reference" "P6"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_circle
 			(center 0.000000 0.000000)
 			(end 3.050000 0.000000)
@@ -212,6 +244,10 @@
 	(footprint "Net2Board:MountingHole_3.2mm_M3_DIN965_Pad"
 		(layer "F.Cu")
 		(at 12.000000 1.500000 0)
+		(property "Reference" "P7"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_circle
 			(center 0.000000 0.000000)
 			(end 3.050000 0.000000)
@@ -229,6 +265,10 @@
 	(footprint "Net2Board:MountingHole_3.2mm_M3_DIN965_Pad"
 		(layer "F.Cu")
 		(at 32.000000 1.500000 0)
+		(property "Reference" "P8"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_circle
 			(center 0.000000 0.000000)
 			(end 3.050000 0.000000)
@@ -246,6 +286,10 @@
 	(footprint "Net2Board:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"
 		(layer "F.Cu")
 		(at 11.000000 27.500000 0)
+		(property "Reference" "R1"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_rect
 			(start -1.050000 -1.500000)
 			(end 8.670000 1.500000)
@@ -270,6 +314,10 @@
 	(footprint "Net2Board:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"
 		(layer "F.Cu")
 		(at 21.000000 27.500000 0)
+		(property "Reference" "R2"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_rect
 			(start -1.050000 -1.500000)
 			(end 8.670000 1.500000)
@@ -294,6 +342,10 @@
 	(footprint "Net2Board:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"
 		(layer "F.Cu")
 		(at 33.400000 14.900000 90)
+		(property "Reference" "R3"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_rect
 			(start -1.050000 -1.500000)
 			(end 8.670000 1.500000)
@@ -318,6 +370,10 @@
 	(footprint "Net2Board:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"
 		(layer "F.Cu")
 		(at 0.500000 14.500000 0)
+		(property "Reference" "R4"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_rect
 			(start -1.050000 -1.500000)
 			(end 8.670000 1.500000)
@@ -342,6 +398,10 @@
 	(footprint "Net2Board:Valve_ECC-83-1"
 		(layer "F.Cu")
 		(at 20.000000 15.000000 0)
+		(property "Reference" "U1"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_circle
 			(center 0.000000 0.050000)
 			(end 0.000000 -10.550000)

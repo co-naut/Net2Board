@@ -34,6 +34,10 @@
 	(footprint "Net2Board:CP_Radial_D10.0mm_P5.00mm"
 		(layer "F.Cu")
 		(at 32.000000 6.000000 180)
+		(property "Reference" "C1"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_circle
 			(center 2.500000 0.000000)
 			(end 7.750000 0.000000)
@@ -58,6 +62,10 @@
 	(footprint "Net2Board:C_Disc_D4.7mm_W2.5mm_P5.00mm"
 		(layer "B.Cu")
 		(at 10.000000 20.000000 270)
+		(property "Reference" "C2"
+			(at 0 0 0)
+			(layer "B.SilkS")
+		)
 		(fp_rect
 			(start -6.050000 -1.500000)
 			(end 1.050000 1.500000)
@@ -82,6 +90,10 @@
 	(footprint "Net2Board:Altech_AK300_1x02_P5.00mm_45-Degree"
 		(layer "F.Cu")
 		(at 20.000000 24.000000 180)
+		(property "Reference" "P1"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_rect
 			(start -2.750000 -6.250000)
 			(end 7.750000 6.750000)
@@ -106,6 +118,10 @@
 	(footprint "Net2Board:MountingHole_3.2mm_M3_DIN965_Pad"
 		(layer "B.Cu")
 		(at 6.000000 26.000000 0)
+		(property "Reference" "P5"
+			(at 0 0 0)
+			(layer "B.SilkS")
+		)
 		(fp_circle
 			(center 0.000000 0.000000)
 			(end -3.050000 0.000000)
@@ -123,6 +139,10 @@
 	(footprint "Net2Board:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"
 		(layer "F.Cu")
 		(at 8.000000 6.000000 0)
+		(property "Reference" "R1"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_rect
 			(start -1.050000 -1.500000)
 			(end 8.670000 1.500000)
@@ -147,6 +167,10 @@
 	(footprint "Net2Board:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"
 		(layer "F.Cu")
 		(at 20.000000 6.000000 90)
+		(property "Reference" "R2"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_rect
 			(start -1.050000 -1.500000)
 			(end 8.670000 1.500000)
@@ -171,6 +195,10 @@
 	(footprint "Net2Board:Valve_ECC-83-1"
 		(layer "F.Cu")
 		(at 20.000000 14.000000 0)
+		(property "Reference" "U1"
+			(at 0 0 0)
+			(layer "F.SilkS")
+		)
 		(fp_circle
 			(center 0.000000 0.050000)
 			(end 0.000000 -10.550000)

@@ -4,6 +4,7 @@ import importlib.metadata
 import net2board
 
 MODULE_HOMES = (
+    "errors",
     "geometry",
     "model",
     "ir",
@@ -12,6 +13,7 @@ MODULE_HOMES = (
     "drc",
     "export",
     "examples",
+    "solver",
 )
 
 

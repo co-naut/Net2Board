@@ -12,6 +12,7 @@ from conftest import ECC83_FP_DIR, ECC83_NETLIST, OUTLINE, STACKUP, load_ecc83_s
 from net2board.boardspec import BoardSpec
 from net2board.build import build_board
 from net2board.geometry import Point
+from net2board.ir import parse_footprint
 
 COMP_ORDER = (
     "C1",
@@ -165,6 +166,32 @@ class TestPadsCarryExportData:
         assert all(pad.drill == 1_020_000 for pad in fp.pads)
 
 
+class TestInternalNicknameStrip:
+    """ADR-0015 — a footprint file may declare `"Lib:Entry"` internally
+    (board-embedded extractions do); the parser strips it exactly as
+    netlist comp footprints are stripped."""
+
+    def test_prefixed_internal_name_parses_to_bare_entry(self):
+        text = (
+            '(footprint "SomeLib:R_Axial_DIN0207"\n'
+            '\t(layer "F.Cu")\n'
+            '\t(pad "1" thru_hole circle (at 0 0) (size 1.6 1.6) '
+            '(drill 0.8) (layers "*.Cu" "*.Mask"))\n'
+            ")\n"
+        )
+        assert parse_footprint(text).entry_name == "R_Axial_DIN0207"
+
+    def test_bare_internal_name_unchanged(self):
+        text = (
+            '(footprint "R_Axial_DIN0207"\n'
+            '\t(layer "F.Cu")\n'
+            '\t(pad "1" thru_hole circle (at 0 0) (size 1.6 1.6) '
+            '(drill 0.8) (layers "*.Cu" "*.Mask"))\n'
+            ")\n"
+        )
+        assert parse_footprint(text).entry_name == "R_Axial_DIN0207"
+
+
 class TestRuntimePurity:
     def test_loader_reads_only_net_and_kicad_mod_each_once(self, monkeypatch):
         read = []
@@ -182,9 +209,20 @@ class TestRuntimePurity:
         )
 
     def test_package_never_shells_out_or_parses_schematics(self):
+        """The engine never shells out and never reads schematics — no
+        oracle call in any runtime path (ADR-0007, README's moat). The
+        one exemption is the session harness (``examples/session.py``,
+        ADR-0019's example-plus-slow-tier module): its slow face runs the
+        ``kicad-cli`` oracle exactly as this suite's slow tier does — a
+        harness duty beside the examples, never an engine path — so only
+        ``subprocess`` may appear there, and anywhere else any banned
+        token fails here."""
         pkg = Path(__file__).resolve().parent.parent / "src" / "net2board"
-        banned = ("subprocess", "os.system", "os.popen", "kicad_sch")
+        harness = pkg / "examples" / "session.py"
+        engine_banned = ("subprocess", "os.system", "os.popen", "kicad_sch")
+        harness_banned = tuple(t for t in engine_banned if t != "subprocess")
         for src in sorted(pkg.rglob("*.py")):
+            banned = harness_banned if src == harness else engine_banned
             text = src.read_text()
             for token in banned:
                 assert token not in text, (src, token)

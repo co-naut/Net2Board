@@ -1,0 +1,162 @@
+(pcb net2board
+	(resolution um 1)
+	(structure
+		(layer F.Cu (type signal))
+		(layer B.Cu (type signal))
+		(boundary
+			(path pcb 0 0 0 40000 0 40000 -30000 0 -30000 0 0)
+		)
+		(via Via_800)
+		(rule
+			(width 250)
+			(clearance 250)
+		)
+	)
+	(placement
+		(component Altech_AK300_1x02_P5.00mm_45-Degree
+			(place P1 1000 -4000 front 0)
+			(place P2 1000 -25000 front 0)
+			(place P3 39000 -4000 front 0)
+			(place P4 39000 -25000 front 0)
+		)
+		(component CP_Radial_D10.0mm_P5.00mm::back
+			(place C1 14000 -21000 back 0)
+		)
+		(component C_Disc_D4.7mm_W2.5mm_P5.00mm
+			(place C2 16200 -1500 front 0)
+		)
+		(component MountingHole_3.2mm_M3_DIN965_Pad
+			(place P5 25500 -1500 front 0)
+			(place P6 33000 -28000 front 0)
+			(place P7 12000 -1500 front 0)
+			(place P8 32000 -1500 front 0)
+		)
+		(component R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal
+			(place R1 11000 -27500 front 0)
+			(place R2 21000 -27500 front 0)
+			(place R3 33400 -14900 front 90)
+			(place R4 500 -14500 front 0)
+		)
+		(component Valve_ECC-83-1
+			(place U1 20000 -15000 front 0)
+		)
+	)
+	(library
+		(image Altech_AK300_1x02_P5.00mm_45-Degree
+			(pin Pad_rect_3000x3000_F-B 1 0 0)
+			(pin Pad_circle_3000x3000_F-B 2 5000 0)
+		)
+		(image CP_Radial_D10.0mm_P5.00mm::back
+			(pin Pad_rect_2000x2000_F-B 1 0 0)
+			(pin Pad_circle_2000x2000_F-B 2 5000 0)
+		)
+		(image C_Disc_D4.7mm_W2.5mm_P5.00mm
+			(pin Pad_circle_1600x1600_F-B 1 0 0)
+			(pin Pad_circle_1600x1600_F-B 2 5000 0)
+		)
+		(image MountingHole_3.2mm_M3_DIN965_Pad
+			(pin Pad_circle_5600x5600_F-B 1 0 0)
+		)
+		(image R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal
+			(pin Pad_circle_1600x1600_F-B 1 0 0)
+			(pin Pad_oval_1600x1600_F-B 2 7620 0)
+		)
+		(image Valve_ECC-83-1
+			(pin Pad_circle_2030x2030_F-B 1 3450 -4800)
+			(pin Pad_circle_2030x2030_F-B 2 5600 -1870)
+			(pin Pad_circle_2030x2030_F-B 3 5600 1780)
+			(pin Pad_circle_2030x2030_F-B 4 3450 4710)
+			(pin Pad_circle_2030x2030_F-B 5 0 5850)
+			(pin Pad_circle_2030x2030_F-B 6 -3460 4710)
+			(pin Pad_circle_2030x2030_F-B 7 -5610 1780)
+			(pin Pad_circle_2030x2030_F-B 8 -5610 -1830)
+			(pin Pad_circle_2030x2030_F-B 9 -3460 -4800)
+		)
+		(padstack Pad_circle_1600x1600_F-B
+			(shape (circle F.Cu 1600))
+			(shape (circle B.Cu 1600))
+		)
+		(padstack Pad_circle_2000x2000_F-B
+			(shape (circle F.Cu 2000))
+			(shape (circle B.Cu 2000))
+		)
+		(padstack Pad_circle_2030x2030_F-B
+			(shape (circle F.Cu 2030))
+			(shape (circle B.Cu 2030))
+		)
+		(padstack Pad_circle_3000x3000_F-B
+			(shape (circle F.Cu 3000))
+			(shape (circle B.Cu 3000))
+		)
+		(padstack Pad_circle_5600x5600_F-B
+			(shape (circle F.Cu 5600))
+			(shape (circle B.Cu 5600))
+		)
+		(padstack Pad_oval_1600x1600_F-B
+			(shape (path F.Cu 1600 0 0 0 0))
+			(shape (path B.Cu 1600 0 0 0 0))
+		)
+		(padstack Pad_rect_2000x2000_F-B
+			(shape (rect F.Cu -1000 -1000 1000 1000))
+			(shape (rect B.Cu -1000 -1000 1000 1000))
+		)
+		(padstack Pad_rect_3000x3000_F-B
+			(shape (rect F.Cu -1500 -1500 1500 1500))
+			(shape (rect B.Cu -1500 -1500 1500 1500))
+		)
+		(padstack Via_800
+			(shape (circle F.Cu 800))
+			(shape (circle B.Cu 800))
+		)
+	)
+	(network
+		(net GND
+			(pins C1-2 P1-1 P2-2 P3-2 R2-2 R3-2 R4-2)
+		)
+		(net "Net-(P1-PM)"
+			(pins P1-2 R4-1 U1-2)
+		)
+		(net "Net-(P2-P1)"
+			(pins C2-1 P2-1 R3-1)
+		)
+		(net "Net-(P3-P1)"
+			(pins C1-1 P3-1 U1-6)
+		)
+		(net "Net-(P4-P1)"
+			(pins P4-1 U1-9)
+		)
+		(net "Net-(P4-PM)"
+			(pins P4-2 U1-4 U1-5)
+		)
+		(net "Net-(U1A-G)"
+			(pins R1-1 U1-1 U1-7)
+		)
+		(net "Net-(U1A-K)"
+			(pins C2-2 R1-2 U1-8)
+		)
+		(net "Net-(U1B-K)"
+			(pins R2-1 U1-3)
+		)
+		(net "unconnected-(P5-Pad1)"
+			(pins P5-1)
+		)
+		(net "unconnected-(P6-Pad1)"
+			(pins P6-1)
+		)
+		(net "unconnected-(P7-Pad1)"
+			(pins P7-1)
+		)
+		(net "unconnected-(P8-Pad1)"
+			(pins P8-1)
+		)
+		(class DEFAULT GND "Net-(P1-PM)" "Net-(P2-P1)" "Net-(P3-P1)" "Net-(P4-P1)" "Net-(P4-PM)" "Net-(U1A-G)" "Net-(U1A-K)" "Net-(U1B-K)" "unconnected-(P5-Pad1)" "unconnected-(P6-Pad1)" "unconnected-(P7-Pad1)" "unconnected-(P8-Pad1)"
+			(circuit
+				(use_via Via_800)
+			)
+			(rule
+				(width 250)
+				(clearance 250)
+			)
+		)
+	)
+)

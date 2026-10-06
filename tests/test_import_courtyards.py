@@ -7,7 +7,10 @@ ADR-0010); absent courtyard is ``None`` — a valid state the overlap check
 skips.
 """
 
+import pytest
+
 from conftest import ECC83_FP_DIR
+from net2board.boardspec import UnsupportedCourtyardShape
 from net2board.geometry import Circle, Point, Rectangle
 from net2board.ir import parse_footprint
 
@@ -111,3 +114,78 @@ class TestAbsentCourtyard:
             ")\n"
         )
         assert parse_footprint(text).courtyard is None
+
+
+class TestPolylineHull:
+    """ADR-0015 — real libraries draw notched pin-1 courtyards (12–20
+    axis-aligned ``fp_line``s); the parse reduces them to their bounding
+    rectangle, a conservative superset of the upstream keep-out."""
+
+    def _line(self, x1, y1, x2, y2):
+        return (
+            f"\t(fp_line (start {x1} {y1}) (end {x2} {y2}) "
+            '(stroke (width 0.01) (type solid)) (layer "F.CrtYd"))\n'
+        )
+
+    def _footprint(self, *lines):
+        return '(footprint "NOTCHED"\n\t(layer "F.Cu")\n' + "".join(lines) + ")\n"
+
+    def test_notched_pin1_courtyard_reduces_to_bounding_rectangle(self):
+        text = self._footprint(
+            self._line(-2.05, -1.7, 2.05, -1.7),
+            self._line(-2.05, 1.7, -2.05, -1.7),
+            self._line(2.05, -1.7, 2.05, -0.39),
+            self._line(2.05, 0.39, 2.05, 1.7),
+            self._line(-2.05, 1.7, 2.05, 1.7),
+            self._line(1.05, -1.7, 1.05, -1.5),
+            self._line(1.05, -1.5, 2.05, -1.5),
+        )
+        assert parse_footprint(text).courtyard == Rectangle(
+            min=Point(-2_050_000, -1_700_000), max=Point(2_050_000, 1_700_000)
+        )
+
+    def test_four_closed_lines_still_yield_the_same_rectangle(self):
+        text = self._footprint(
+            self._line(0, 0, 1, 0),
+            self._line(1, 0, 1, 2),
+            self._line(1, 2, 0, 2),
+            self._line(0, 2, 0, 0),
+        )
+        assert parse_footprint(text).courtyard == Rectangle(
+            min=Point(0, 0), max=Point(1_000_000, 2_000_000)
+        )
+
+    def test_diagonal_segment_still_raises(self):
+        text = self._footprint(
+            self._line(0, 0, 1, 0),
+            self._line(1, 0, 1.5, 0.5),
+            self._line(1.5, 0.5, 1, 1),
+            self._line(1, 1, 0, 1),
+            self._line(0, 1, 0, 0),
+        )
+        with pytest.raises(UnsupportedCourtyardShape, match="NOTCHED"):
+            parse_footprint(text)
+
+    def test_circle_among_lines_still_raises(self):
+        circle = (
+            "\t(fp_circle (center 0 0) (end 0.5 0) "
+            '(stroke (width 0.01) (type solid)) (layer "F.CrtYd"))\n'
+        )
+        text = self._footprint(
+            self._line(0, 0, 1, 0),
+            self._line(1, 0, 1, 1),
+            self._line(1, 1, 0, 1),
+            self._line(0, 1, 0, 0),
+            circle,
+        )
+        with pytest.raises(UnsupportedCourtyardShape, match="NOTCHED"):
+            parse_footprint(text)
+
+    def test_three_lines_still_raise(self):
+        text = self._footprint(
+            self._line(0, 0, 1, 0),
+            self._line(1, 0, 1, 1),
+            self._line(1, 1, 0, 1),
+        )
+        with pytest.raises(UnsupportedCourtyardShape, match="NOTCHED"):
+            parse_footprint(text)

@@ -17,6 +17,9 @@ htmlcov/
 # OS
 .DS_Store
 
+# KiCad editor sidecars (project-local GUI state, not engine output)
+*.kicad_prl
+
 # Agent session plumbing (plans, scratch)
 .opencode/
 
@@ -33,3 +36,11 @@ kicad_demo/ecc83/*
 !kicad_demo/ecc83/footprints.pretty/
 kicad_demo/ecc83/footprints.pretty/*
 !kicad_demo/ecc83/footprints.pretty/*.kicad_mod
+# tiny_tapeout hard-placement fixture (#30; see its README.md)
+!kicad_demo/tiny_tapeout/
+kicad_demo/tiny_tapeout/*
+!kicad_demo/tiny_tapeout/README.md
+!kicad_demo/tiny_tapeout/tinytapeout.net
+!kicad_demo/tiny_tapeout/footprints.pretty/
+kicad_demo/tiny_tapeout/footprints.pretty/*
+!kicad_demo/tiny_tapeout/footprints.pretty/*.kicad_mod

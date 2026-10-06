@@ -10,7 +10,9 @@ The structured binding-failure hierarchy rooted at ``BoardSpecError`` is
 pinned here: the loader raises ``FootprintNotFound``,
 ``FootprintResolveError``, and ``UnsupportedCourtyardShape`` (the last is
 raised by the ``ir`` parsers acting as the loader's parse phase, ADR-0008);
-``build_board`` raises ``PinPadBindingError``.
+``build_board`` raises ``PinPadBindingError``. The root itself extends the
+library-wide ``Net2BoardError`` (ADR-0013's reconciliation) — structural
+only, the phase split of ADR-0008 is untouched.
 
 The error classes below are defined before the ``ir`` import on purpose:
 ``net2board.ir`` imports the parsers at its tail, the parsers import these
@@ -24,6 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from net2board.errors import Net2BoardError
 from net2board.geometry import Rectangle
 
 __all__ = [
@@ -36,7 +39,7 @@ __all__ = [
 ]
 
 
-class BoardSpecError(Exception):
+class BoardSpecError(Net2BoardError):
     """Root of the spec-binding failure surface (ADR-0008)."""
 
 

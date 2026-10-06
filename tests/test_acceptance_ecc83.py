@@ -19,13 +19,29 @@ from net2board.build import build_board
 from net2board.drc import ViolationType, run_drc
 from net2board.examples.ecc83_placements import (
     BEAT_REF,
+    EDGE_MOUNTS,
     PLACEMENTS,
     apply_placements,
     beat_overlap_board,
 )
 from net2board.export import export_pcb
+from net2board.model import Edge, EdgeMount, Requirement
 
 REGEN_HINT = "regenerate deliberately: UPDATE_GOLDENS=1 uv run pytest tests/test_acceptance_ecc83.py"
+
+# The measured overhangs of the 9 overhanging rows (mm → nm), the bounds the
+# table's EdgeMounts must state (ADR-0018: 0.55–6.75 mm, corners two edges).
+MEASURED_OVERHANGS: dict[str, dict[Edge, int]] = {
+    "P1": {Edge.LEFT: 1_750_000, Edge.TOP: 2_250_000},
+    "P2": {Edge.LEFT: 1_750_000, Edge.BOTTOM: 1_750_000},
+    "P3": {Edge.RIGHT: 6_750_000, Edge.TOP: 2_250_000},
+    "P4": {Edge.RIGHT: 6_750_000, Edge.BOTTOM: 1_750_000},
+    "P5": {Edge.TOP: 1_550_000},
+    "P6": {Edge.BOTTOM: 1_050_000},
+    "P7": {Edge.TOP: 1_550_000},
+    "P8": {Edge.TOP: 1_550_000},
+    "R4": {Edge.LEFT: 550_000},
+}
 
 
 def final_board():
@@ -39,6 +55,40 @@ class TestPlacementTable:
         assert [row.ref for row in PLACEMENTS] == [
             component.ref for component in board.components
         ]
+
+
+class TestEdgeMountTable:
+    """The 13 stated overhangs keeping the acceptance face clean (ADR-0018)."""
+
+    def test_authors_exactly_thirteen_mounts_for_nine_rows(self):
+        assert len(EDGE_MOUNTS) == 13
+        assert len(MEASURED_OVERHANGS) == 9
+
+    def test_mounts_are_requirements_on_table_rows(self):
+        rows = {row.ref for row in PLACEMENTS}
+        for constraint in EDGE_MOUNTS:
+            assert isinstance(constraint.kind, Requirement)
+            assert isinstance(constraint.relation, EdgeMount)
+            ref = constraint.relation.target.removeprefix("placement:")
+            assert ref in rows
+
+    def test_mounts_state_the_measured_edges_and_bounds(self):
+        stated: dict[str, dict[Edge, int]] = {}
+        for constraint in EDGE_MOUNTS:
+            relation = constraint.relation
+            ref = relation.target.removeprefix("placement:")
+            stated.setdefault(ref, {})[relation.edge] = relation.max_overhang_nm
+        assert stated == MEASURED_OVERHANGS
+
+    def test_mount_ids_name_their_ref_and_edge(self):
+        assert {constraint.id for constraint in EDGE_MOUNTS} == {
+            f"{ref}-{edge.value}"
+            for ref, edges in MEASURED_OVERHANGS.items()
+            for edge in edges
+        }
+
+    def test_final_board_carries_the_mounts(self):
+        assert final_board().constraints == EDGE_MOUNTS
 
 
 class TestFinalBoard:
@@ -81,10 +131,10 @@ class TestExport:
 
 
 class TestExamplesSurface:
-    def test_surface_is_exactly_the_table_and_the_script(self):
+    def test_surface_is_the_table_the_script_and_the_session(self):
         assert sorted(
             module.name for module in pkgutil.iter_modules(net2board.examples.__path__)
-        ) == ["ecc83", "ecc83_placements"]
+        ) == ["ecc83", "ecc83_placements", "session"]
 
 
 class TestRunnableExample:

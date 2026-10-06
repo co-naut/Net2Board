@@ -6,20 +6,30 @@ from each footprint. Millimetres convert to integer nanometres exactly via
 ``Decimal`` — a coordinate off the nanometre grid raises rather than rounds
 (ADR-0005). Semantic load failures raise the structured hierarchy from
 ``boardspec`` (ADR-0008): a comp with no footprint token is a
-``FootprintResolveError``; a CrtYd graphic outside the M1 vocabulary
-(axis-aligned rectangle, circle) is an ``UnsupportedCourtyardShape``.
+``FootprintResolveError``; a CrtYd graphic outside the parse vocabulary
+(circle, rect, axis-aligned line polyline) is an ``UnsupportedCourtyardShape``.
+
+Courtyard parsing meets real KiCad libraries where they are (ADR-0015): a
+line-polyline courtyard — modern libraries draw the rectangle *with a pin-1
+notch*, 12–20 ``fp_line``s — reduces to its axis-aligned bounding rectangle,
+a conservative superset of the upstream keep-out (never smaller, so never a
+legalization under-estimate; the exporter emits the same rectangle, keeping
+the ``kicad-cli`` oracle in agreement by construction). The model's
+``Shape = Rectangle | Circle`` vocabulary is unchanged (ADR-0006). A
+footprint's internal name may carry a library nickname prefix
+(``"Lib:Entry"``); it is stripped exactly as netlist comp footprints are
+(the loader's nickname-strip rule).
 
 Two tolerances keep the whole committed library parseable: pad-local
 rotation angles and oval-drill widths are dropped (the spec-pinned ``PadIR``
 carries position and round-drill diameter only). No footprint referenced by
-the M1 netlist uses either; unreferenced library alternatives (e.g.
+the committed netlists uses either; unreferenced library alternatives (e.g.
 ``Valve_ECC-83-2``) do. Everything else unrepresentable — drill offsets,
-off-grid coordinates — still raises.
+off-grid coordinates, diagonal or non-line CrtYd graphics — still raises.
 """
 
 from __future__ import annotations
 
-from collections import Counter
 from decimal import Decimal
 
 from net2board.boardspec import FootprintResolveError, UnsupportedCourtyardShape
@@ -70,7 +80,7 @@ def parse_footprint(text: str) -> FootprintIR:
     form = _top_form(text, "footprint")
     if len(form) < 2 or not isinstance(form[1], str):
         raise ValueError("footprint form has no name string")
-    entry_name = form[1]
+    entry_name = form[1].rsplit(":", 1)[-1]
     pads = tuple(
         _parse_pad(pad_form, entry_name) for pad_form in _children(form, "pad")
     )
@@ -146,7 +156,7 @@ def _parse_courtyard(form: list, entry_name: str) -> Shape | None:
         return _circle_from(items[0])
     if len(items) == 1 and items[0][0] == "fp_rect":
         return _rect_from_corners(_point(items[0], "start"), _point(items[0], "end"))
-    if len(items) == 4 and all(item[0] == "fp_line" for item in items):
+    if len(items) >= 4 and all(item[0] == "fp_line" for item in items):
         return _rect_from_lines(items, entry_name)
     raise UnsupportedCourtyardShape(entry_name=entry_name)
 
@@ -166,7 +176,14 @@ def _rect_from_corners(a: Point, b: Point) -> Rectangle:
 
 
 def _rect_from_lines(items: list, entry_name: str) -> Rectangle:
-    endpoint_counts: Counter[Point] = Counter()
+    """The axis-aligned bounding rectangle of a line-polyline courtyard.
+
+    Real KiCad libraries draw courtyards as a rectangle with a pin-1 notch
+    (12–20 ``fp_line``s); four closed lines are the special case the M1
+    fixture used. The hull is a conservative superset of the upstream
+    keep-out (ADR-0015): every segment must be axis-aligned — a diagonal
+    one cannot be bounded exactly by an axis-aligned pair and raises.
+    """
     xs: set[int] = set()
     ys: set[int] = set()
     for line in items:
@@ -174,18 +191,9 @@ def _rect_from_lines(items: list, entry_name: str) -> Rectangle:
         end = _point(line, "end")
         if start.x != end.x and start.y != end.y:
             raise UnsupportedCourtyardShape(entry_name=entry_name)
-        endpoint_counts[start] += 1
-        endpoint_counts[end] += 1
         xs.update((start.x, end.x))
         ys.update((start.y, end.y))
-    if (
-        len(endpoint_counts) == 4
-        and set(endpoint_counts.values()) == {2}
-        and len(xs) == 2
-        and len(ys) == 2
-    ):
-        return Rectangle(min=Point(min(xs), min(ys)), max=Point(max(xs), max(ys)))
-    raise UnsupportedCourtyardShape(entry_name=entry_name)
+    return Rectangle(min=Point(min(xs), min(ys)), max=Point(max(xs), max(ys)))
 
 
 def _point(form: list, tag: str) -> Point:

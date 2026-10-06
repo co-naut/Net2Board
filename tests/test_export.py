@@ -20,8 +20,8 @@ from net2board.ir import CompIR, FootprintIR, NetIR, NetlistIR, PadIR
 R1_PLACED = fresh_board().with_placement("R1", 8_000_000, 6_000_000, 0, "F.Cu")
 
 
-def test_surface_is_exactly_the_export_function():
-    assert export.__all__ == ["export_pcb"]
+def test_surface_is_exactly_the_export_functions():
+    assert export.__all__ == ["DsnRules", "export_dsn", "export_pcb"]
 
 
 def test_version_header_is_first_child():
@@ -152,6 +152,24 @@ def test_outline_emitted_as_edge_cuts_rect():
     assert '\t\t(layer "Edge.Cuts")' in text
 
 
+def test_reference_property_names_every_footprint():
+    """The identity property — the SES re-import join key (ADR-0017)."""
+    board = (
+        fresh_board()
+        .with_placement("R1", 8_000_000, 6_000_000, 0, "F.Cu")
+        .with_placement("R3", 8_000_000, 20_000_000, 0, "B.Cu")
+    )
+    text = export_pcb(board)
+    assert (
+        '\t\t(property "Reference" "R1"\n\t\t\t(at 0 0 0)\n\t\t\t(layer "F.SilkS")'
+        in text
+    )
+    assert (
+        '\t\t(property "Reference" "R3"\n\t\t\t(at 0 0 0)\n\t\t\t(layer "B.SilkS")'
+        in text
+    )
+
+
 def test_rect_courtyard_emitted_on_front_courtyard_layer():
     text = export_pcb(R1_PLACED)
     assert "\t\t(fp_rect" in text
@@ -256,3 +274,39 @@ def test_smd_pad_without_drill_and_layer_remap_on_back_side():
 
 def test_text_ends_with_closing_paren_and_newline():
     assert export_pcb(R1_PLACED).endswith(")\n")
+
+
+def test_unlocked_footprints_carry_no_lock_token():
+    assert "locked" not in export_pcb(R1_PLACED)
+
+
+def test_locked_footprint_emits_the_lock_token():
+    """``(locked yes)`` in pcbnew 10's own layout — first token line
+    inside the footprint block, before ``(layer …)``. Probed on
+    kicad-cli 10.0.6: parses, and ``IsLocked()`` reads back True.
+    """
+    board = fresh_board().with_placement(
+        "R1", 8_000_000, 6_000_000, 0, "F.Cu", locked=True
+    )
+    text = export_pcb(board)
+    assert '\t(footprint "Net2Board:RES"\n\t\t(locked yes)\n\t\t(layer "F.Cu")' in text
+
+
+def test_only_the_locked_footprint_is_marked():
+    board = (
+        fresh_board()
+        .with_placement("R2", 20_000_000, 6_000_000, 0, "F.Cu", locked=True)
+        .with_placement("R1", 8_000_000, 6_000_000, 0, "F.Cu")
+    )
+    text = export_pcb(board)
+    assert text.count("\t\t(locked yes)") == 1
+    r1_opens = text.index(
+        '\t(footprint "Net2Board:RES"\n\t\t(layer "F.Cu")\n\t\t(at 8.000000 6.000000 0)'
+    )
+    r2_opens = text.index(
+        '\t(footprint "Net2Board:RES"\n'
+        "\t\t(locked yes)\n"
+        '\t\t(layer "F.Cu")\n'
+        "\t\t(at 20.000000 6.000000 0)"
+    )
+    assert r1_opens < r2_opens
