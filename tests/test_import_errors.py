@@ -14,6 +14,7 @@ from net2board.boardspec import (
     FootprintNotFound,
     FootprintResolveError,
     UnsupportedCourtyardShape,
+    UnsupportedPadRotation,
 )
 
 PAD = (
@@ -80,7 +81,13 @@ def load(tmp_path, netlist: str, lib_dir) -> BoardSpec:
 
 class TestHierarchy:
     @pytest.mark.parametrize(
-        "exc", [FootprintNotFound, FootprintResolveError, UnsupportedCourtyardShape]
+        "exc",
+        [
+            FootprintNotFound,
+            FootprintResolveError,
+            UnsupportedCourtyardShape,
+            UnsupportedPadRotation,
+        ],
     )
     def test_loader_errors_are_boardspec_errors(self, exc):
         assert issubclass(exc, BoardSpecError)
@@ -172,6 +179,43 @@ class TestUnsupportedCourtyardShape:
         lib_dir = write_library(tmp_path, footprint_text(crtyd=mixed))
         with pytest.raises(UnsupportedCourtyardShape):
             load(tmp_path, netlist_text(), lib_dir)
+
+
+class TestUnsupportedPadRotation:
+    def test_pad_angle_off_the_90_multiple(self, tmp_path):
+        angled = (
+            '(pad "3" thru_hole circle (at 0 0 45) (size 1.6 1.6) (drill 0.8) '
+            '(layers "*.Cu" "*.Mask"))'
+        )
+        lib_dir = write_library(tmp_path, footprint_text(pad=angled))
+        with pytest.raises(UnsupportedPadRotation) as excinfo:
+            load(tmp_path, netlist_text(), lib_dir)
+        assert excinfo.value.entry_name == "ENTRY"
+        assert excinfo.value.pad_number == "3"
+        assert excinfo.value.angle == 45
+        assert "ENTRY" in str(excinfo.value)
+        assert "3" in str(excinfo.value)
+        assert "45" in str(excinfo.value)
+
+    def test_negative_angle_normalizes_before_the_check(self, tmp_path):
+        angled = (
+            '(pad "1" thru_hole circle (at 0 0 -45) (size 1.6 1.6) (drill 0.8) '
+            '(layers "*.Cu" "*.Mask"))'
+        )
+        lib_dir = write_library(tmp_path, footprint_text(pad=angled))
+        with pytest.raises(UnsupportedPadRotation) as excinfo:
+            load(tmp_path, netlist_text(), lib_dir)
+        assert excinfo.value.angle == 315
+
+    @pytest.mark.parametrize("raw, normalized", [(90, 90), (270, 270), (-90, 270)])
+    def test_pad_angles_on_the_90_multiples_parse(self, tmp_path, raw, normalized):
+        angled = (
+            f'(pad "1" thru_hole circle (at 0 0 {raw}) (size 1.6 1.6) (drill 0.8) '
+            '(layers "*.Cu" "*.Mask"))'
+        )
+        lib_dir = write_library(tmp_path, footprint_text(pad=angled))
+        spec = load(tmp_path, netlist_text(), lib_dir)
+        assert spec.footprint_irs["ENTRY"].pads[0].local_rotation == normalized
 
 
 class TestMalformedInput:

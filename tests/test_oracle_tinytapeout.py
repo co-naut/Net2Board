@@ -21,87 +21,33 @@ contact is a fact outside M2's model (ADR-0006's courtyard proxy) —
 U4's pin-1 TSSOP pad, centers 0.264 mm apart).
 """
 
-import json
-import re
-import shutil
-import subprocess
-
 import pytest
 
+from conftest import load_tiny_spec
+from net2board.build import build_board
 from net2board.drc import ViolationType, run_drc
+from net2board.examples.tiny_demo_placements import apply_demo_placements
+from net2board.export import export_pcb
+from net2board.harness.oracle import (
+    oracle_violation_count,
+    ratsnest_net_names,
+    unescape_net_name,
+)
+from net2board.solver import legalize
 
 pytestmark = [
     pytest.mark.slow,
-    pytest.mark.skipif(
-        shutil.which("kicad-cli") is None,
-        reason="kicad-cli is not installed — the slow tier is a local "
-        "sign-off step, run deliberately with `pytest -m slow` (ADR-0010)",
-    ),
 ]
 
 _ORACLE_OVERLAP_TYPE = ViolationType.COURTYARDS_OVERLAP.value
-_DRC_COMMAND = ("kicad-cli", "pcb", "drc", "--format", "json", "--severity-all")
-
-_NET_TOKEN = re.compile(r"\[([^]]+)\]")
-
-_KICAD_NET_ESCAPES = (("{slash}", "/"),)
-"""Net names escape ``/`` as ``{slash}`` — the tiny fixture's netlist
-stores ``SDO{slash}out1`` while the oracle's DRC JSON reports
-``SDO/out1`` (probed on 10.0.6). Both sides are normalized through the
-same mapping; an unmapped escape shows up as a coverage failure rather
-than a silent pass."""
-
-
-def _unescape_net_name(name: str) -> str:
-    for escaped, literal in _KICAD_NET_ESCAPES:
-        name = name.replace(escaped, literal)
-    return name
 
 
 @pytest.fixture(scope="session")
-def tiny_oracle_report(tmp_path_factory, tiny_session_record):
-    """The oracle's report over the searched export, run once: exit 0 is
-    the parse-acceptance claim, asserted against the subprocess itself —
-    exit 3 means the board never loaded (pinned in TestOracleContract)."""
-    work = tmp_path_factory.mktemp("tiny-oracle")
-    board_path = work / "tiny_session.kicad_pcb"
-    board_path.write_text(tiny_session_record.export)
-    report_path = work / "tiny_session.drc.json"
-    result = subprocess.run(
-        (*_DRC_COMMAND, "-o", str(report_path), str(board_path)),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, (
-        f"kicad-cli exited {result.returncode} (3 = parse failure)\n"
-        f"stdout:\n{result.stdout}stderr:\n{result.stderr}"
-    )
-    return json.loads(report_path.read_text())
-
-
-def oracle_violation_count(report, violation_type):
-    """How many oracle violations carry ``violation_type`` — per type only."""
-    return sum(
-        1 for violation in report["violations"] if violation["type"] == violation_type
-    )
-
-
-def ratsnest_net_names(report):
-    """Every net name the oracle's ratsnest references — the bracketed
-    token is the only naming the JSON carries (probed in #18); an item
-    without one fails loudly."""
-    names = set()
-    for entry in report["unconnected_items"]:
-        for item in entry["items"]:
-            match = _NET_TOKEN.search(item["description"])
-            assert match, (
-                f"oracle pad item carries no [net] token: "
-                f"{item['description']!r} — check the installed kicad-cli's "
-                f"JSON description format"
-            )
-            names.add(_unescape_net_name(match.group(1)))
-    return names
+def tiny_oracle_report(tiny_session_record, oracle_report):
+    """The oracle's report over the searched export, run once: the
+    parse-acceptance claim is the adapter's ``PARSED`` status — exit 3
+    means the board never loaded (pinned in TestOracleContract)."""
+    return oracle_report(tiny_session_record.export, "tiny_session")
 
 
 def placed_multi_pad_net_names(board):
@@ -111,7 +57,7 @@ def placed_multi_pad_net_names(board):
     pads that touch are one island, a contact M2 does not model."""
     placed = {placement.ref for placement in board.placements}
     return {
-        _unescape_net_name(net.name)
+        unescape_net_name(net.name)
         for net in board.nets
         if sum(1 for ref, _pad in net.pins if ref in placed) >= 2
     }
@@ -175,3 +121,123 @@ class TestSearchedTinyBoardAgainstTheOracle:
         searched board: the acceptance face's containment beat, asserted
         here against the same record the oracle saw."""
         assert run_drc(tiny_session_record.headline.board) == ()
+
+
+_PAD_COPPER_TYPES = (
+    ViolationType.SHORTING_ITEMS,
+    ViolationType.CLEARANCE,
+    ViolationType.COPPER_EDGE_CLEARANCE,
+)
+
+
+class TestPadCopperParity:
+    """#91's parity receipt (ADR-0022): per-type parity on pre-route
+    boards — pads are the only copper there. The demo placement reads
+    0/0/2 on both sides (the C12 pair at 0.49 mm actual); the
+    deliberately shorted variant — C1 co-placed onto C2, SMD pads so the
+    granularities coincide — pins the shorting_items half with the
+    counts equal."""
+
+    @staticmethod
+    def _ours_by_type(board):
+        run = run_drc(board)
+        return {
+            check.value: sum(1 for v in run if v.type is check)
+            for check in _PAD_COPPER_TYPES
+        }
+
+    @staticmethod
+    def _oracle_by_type(report):
+        return {
+            check.value: oracle_violation_count(report, check.value)
+            for check in _PAD_COPPER_TYPES
+        }
+
+    @pytest.fixture(scope="class")
+    def demo_board(self):
+        return apply_demo_placements(build_board(load_tiny_spec()))
+
+    @pytest.fixture(scope="class")
+    def shorted_board(self, demo_board):
+        c2 = demo_board.placement("C2")
+        return demo_board.with_placement("C1", c2.pos.x, c2.pos.y, c2.rotation, c2.side)
+
+    @pytest.fixture(scope="class")
+    def demo_oracle_by_type(self, demo_board, oracle_report):
+        return self._oracle_by_type(oracle_report(export_pcb(demo_board), "demo"))
+
+    @pytest.fixture(scope="class")
+    def shorted_oracle_by_type(self, shorted_board, oracle_report):
+        return self._oracle_by_type(oracle_report(export_pcb(shorted_board), "shorted"))
+
+    def test_demo_placement_reads_0_0_2_on_both_sides(
+        self, demo_board, demo_oracle_by_type
+    ):
+        assert self._ours_by_type(demo_board) == {
+            "shorting_items": 0,
+            "clearance": 0,
+            "copper_edge_clearance": 2,
+        }
+        assert self._ours_by_type(demo_board) == demo_oracle_by_type
+
+    def test_shorted_variant_parity(self, shorted_board, shorted_oracle_by_type):
+        ours = self._ours_by_type(shorted_board)
+        assert ours["shorting_items"] == 3
+        assert ours == shorted_oracle_by_type
+
+
+class TestLegalizeRepairsCopper:
+    """#95's slow receipt: the repair vocabulary ends the tiny demo
+    board — and its deliberately shorted variant — at the oracle's own
+    0/0/0 on the three copper types. The board's authored facts stay:
+    the edge-hanging connectors keep their containment and courtyard
+    findings (unrepairable by translation, named), and every pad-copper
+    finding is gone — the C12 pair's 0.49 mm edge gap pulled inside the
+    shrunk outline, the co-placed short pushed out past full clearance.
+    ``run_drc`` defines legal for the copper set; the oracle is the why
+    (ADR-0010)."""
+
+    @pytest.fixture(scope="class")
+    def legal_demo_board(self):
+        # the C12 pair's 0.49 mm edge gap pulls in by exactly 11 000 nm —
+        # the 10 nm deficit plus the 1 µm margin; the edge-hanging
+        # connectors keep their authored containment and courtyard facts
+        return legalize(apply_demo_placements(build_board(load_tiny_spec()))).board
+
+    @pytest.fixture(scope="class")
+    def legal_shorted_board(self, legal_demo_board):
+        c2 = legal_demo_board.placement("C2")
+        co_placed = legal_demo_board.with_placement(
+            "C1", c2.pos.x, c2.pos.y, c2.rotation, c2.side
+        )
+        return legalize(co_placed).board
+
+    @staticmethod
+    def _zeros(board):
+        run = run_drc(board)
+        counts = {
+            check.value: sum(1 for v in run if v.type is check)
+            for check in _PAD_COPPER_TYPES
+        }
+        assert counts == {check.value: 0 for check in _PAD_COPPER_TYPES}
+        return counts
+
+    def test_legalized_demo_reads_0_0_0_at_the_oracle(
+        self, legal_demo_board, oracle_report
+    ):
+        self._zeros(legal_demo_board)
+        report = oracle_report(export_pcb(legal_demo_board), "legal-demo")
+        assert {
+            check.value: oracle_violation_count(report, check.value)
+            for check in _PAD_COPPER_TYPES
+        } == {check.value: 0 for check in _PAD_COPPER_TYPES}
+
+    def test_legalized_shorted_reads_0_0_0_at_the_oracle(
+        self, legal_shorted_board, oracle_report
+    ):
+        self._zeros(legal_shorted_board)
+        report = oracle_report(export_pcb(legal_shorted_board), "legal-shorted")
+        assert {
+            check.value: oracle_violation_count(report, check.value)
+            for check in _PAD_COPPER_TYPES
+        } == {check.value: 0 for check in _PAD_COPPER_TYPES}

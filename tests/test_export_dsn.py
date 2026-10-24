@@ -13,8 +13,9 @@ mirror, ``F.Cu``/``B.Cu`` layer names verbatim, quoted tokens with no
 import pytest
 
 from conftest import OUTLINE, STACKUP, fresh_board, make_spec
-from net2board.export import DsnRules, export_dsn
+from net2board.export import RouteSizes, export_dsn
 from net2board.ir._sexpr import read_sexpr
+from net2board.model import DesignRules
 
 R1_PLACED = fresh_board().with_placement("R1", 8_000_000, 6_000_000, 0, "F.Cu")
 R2_PLACED = fresh_board().with_placement("R2", 8_000_000, 6_000_000, 0, "F.Cu")
@@ -102,26 +103,55 @@ class TestStructure:
     def test_default_rules_land_in_both_rule_blocks(self):
         text = export_dsn(R1_PLACED)
         assert "\t\t\t(width 250)" in text
-        assert "\t\t\t(clearance 250)" in text
+        # the clearance is Board state (ADR-0020): the fresh-project
+        # default the checker prices too
+        assert "\t\t\t(clearance 200)" in text
         assert "\t\t\t\t(width 250)" in text
+        assert "\t\t\t\t(clearance 200)" in text
 
-    def test_custom_rules_reach_both_rule_blocks_and_the_via(self):
-        rules = DsnRules(
-            width_nm=300_000, clearance_nm=150_000, via_diameter_nm=1_000_000
-        )
-        text = export_dsn(R1_PLACED, rules)
-        assert "\t\t\t(width 300)" in text
+    def test_the_boards_rules_price_the_general_clearance(self):
+        spec = make_spec(design_rules=DesignRules(clearance_nm=150_000))
+        from net2board.build import build_board
+
+        board = build_board(spec).with_placement("R1", 8_000_000, 6_000_000, 0, "F.Cu")
+        text = export_dsn(board)
         assert "\t\t\t(clearance 150)" in text
+        assert "\t\t\t\t(clearance 150)" in text
+
+    def test_custom_sizes_reach_both_rule_blocks_and_the_via(self):
+        sizes = RouteSizes(width_nm=300_000, via_diameter_nm=1_000_000)
+        text = export_dsn(R1_PLACED, sizes)
+        assert "\t\t\t(width 300)" in text
         assert "\t\t(via Via_1000)" in text
         assert "\t\t\t\t(use_via Via_1000)" in text
 
-    def test_nonpositive_rules_raise(self):
+    def test_nonpositive_sizes_raise(self):
         with pytest.raises(ValueError, match="positive"):
-            DsnRules(width_nm=0)
+            RouteSizes(width_nm=0)
         with pytest.raises(ValueError, match="positive"):
-            DsnRules(clearance_nm=-1)
-        with pytest.raises(ValueError, match="positive"):
-            DsnRules(via_diameter_nm=0)
+            RouteSizes(via_diameter_nm=0)
+
+    def test_the_edge_number_rides_the_dsn(self):
+        # ADR-0022/#84: the outline names an underscore-free clearance
+        # class and the structure rule prices every item class against
+        # it, the named pairs riding AFTER the general clearance (the
+        # reader's setDefaultValue clobbers anything before it)
+        text = export_dsn(R1_PLACED)
+        boundary = text.split("\t\t(boundary", 1)[1].split("\t\t)", 1)[0]
+        assert "(clearance_class edge)" in boundary
+        rule = text.split("\t\t(rule\n", 1)[1].split("\t\t)", 1)[0]
+        assert rule.index("(clearance 200)") < rule.index("(clearance 500")
+        for item in ("wire", "via", "smd", "pin", "area"):
+            assert f"(clearance 500 (type {item}_edge))" in rule
+
+    def test_a_custom_edge_number_prices_the_pairs(self):
+        spec = make_spec(design_rules=DesignRules(edge_clearance_nm=300_000))
+        from net2board.build import build_board
+
+        board = build_board(spec).with_placement("R1", 8_000_000, 6_000_000, 0, "F.Cu")
+        text = export_dsn(board)
+        assert "\t\t\t(clearance 300 (type wire_edge))" in text
+        assert "(clearance 500 (type wire_edge))" not in text
 
     def test_via_padstack_spans_the_stackup(self):
         text = export_dsn(R1_PLACED)

@@ -45,14 +45,14 @@
 			(layer "B.CrtYd")
 		)
 		(pad "1" thru_hole rect
-			(at 0.000000 0.000000)
+			(at 0.000000 0.000000 180)
 			(size 2.000000 2.000000)
 			(drill 1.000000)
 			(layers "*.Cu" "*.Mask")
 			(net 4 "Net-(P3-P1)")
 		)
 		(pad "2" thru_hole circle
-			(at -5.000000 0.000000)
+			(at -5.000000 0.000000 180)
 			(size 2.000000 2.000000)
 			(drill 1.000000)
 			(layers "*.Cu" "*.Mask")
@@ -353,14 +353,14 @@
 			(layer "F.CrtYd")
 		)
 		(pad "1" thru_hole circle
-			(at 0.000000 0.000000)
+			(at 0.000000 0.000000 90)
 			(size 1.600000 1.600000)
 			(drill 0.800000)
 			(layers "*.Cu" "*.Mask")
 			(net 3 "Net-(P2-P1)")
 		)
 		(pad "2" thru_hole oval
-			(at 7.620000 0.000000)
+			(at 7.620000 0.000000 90)
 			(size 1.600000 1.600000)
 			(drill 0.800000)
 			(layers "*.Cu" "*.Mask")

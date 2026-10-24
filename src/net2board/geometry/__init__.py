@@ -11,24 +11,37 @@ the constraint checks and the objective's Preference hinges share
 error physically meaningless (ADR-0014). ``shape_aabb`` is that ADR's stated
 circle resolution (``center ± isqrt(radius_sq)``), and it is what turns a
 courtyard into the box Region, EdgeMount, and KeepTogether measure.
+
+Beside the measures live the **conservative box pre-filters** (#103): grown
+box, box distance, and box-to-outline tests that prove pad pairs or
+pad-to-edge gaps clean without exact pricing — one definition each, the
+checker and the Evaluator their only consumers.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from decimal import Decimal
+from enum import Enum
 from math import isqrt
 
 __all__ = [
+    "Capsule",
     "Circle",
+    "Edge",
     "Point",
     "Rectangle",
     "Shape",
+    "capsule_gap_nm",
+    "capsules_overlap",
     "edge_face_offset_nm",
+    "measure_box",
     "mirror_local",
     "pad_distance_nm",
     "pad_world_bbox",
     "pad_world_center",
+    "pad_world_outline",
     "region_shortfall_nm",
     "shape_aabb",
     "shape_contained_in",
@@ -88,6 +101,24 @@ class Circle:
 Shape = Rectangle | Circle
 
 
+@dataclass(frozen=True)
+class Capsule:
+    """A pad copper outline: an axis-aligned core rectangle grown by a
+    radius (ADR-0022, #91).
+
+    Exact for ``rect`` (r=0), ``circle`` (point core), ``oval`` (segment
+    core) and ``roundrect`` (shrunk rect core); a bounding-rectangle
+    superset for hulls the importer derives from ``custom`` primitives.
+    Rounding is one-directional — radii that would split a nanometre ceil,
+    the roundrect corner radius floors — so the modelled shape never
+    under-covers the true copper: a false clean at ERROR severity is
+    impossible by construction.
+    """
+
+    core: Rectangle
+    radius: int
+
+
 def mirror_local(point: Point, side: str) -> Point:
     """Mirror a footprint-local point's x for a placement on ``"B.Cu"``.
 
@@ -98,6 +129,35 @@ def mirror_local(point: Point, side: str) -> Point:
     translate + rotate only on load.
     """
     return Point(-point.x, point.y) if side == "B.Cu" else point
+
+
+_ROTATIONS = (0, 90, 180, 270)
+
+
+def _quarter_turn(point: Point, rotation: int) -> Point:
+    """A point turned by a 90° multiple, CCW-as-displayed in the y-down
+    board frame — the one cascade behind both half-transforms (``_turn``,
+    ``_local_turn``); an off-grid rotation raises."""
+    if rotation not in _ROTATIONS:
+        raise ValueError(
+            f"invalid rotation {rotation!r}: must be one of "
+            f"{_ROTATIONS} (90° increments)"
+        )
+    x, y = point.x, point.y
+    if rotation == 90:
+        x, y = y, -x
+    elif rotation == 180:
+        x, y = -x, -y
+    elif rotation == 270:
+        x, y = -y, x
+    return Point(x, y)
+
+
+def _turn(local: Point, placement) -> Point:
+    """The mirror-and-rotate half of ``world_point`` — the anchor
+    translation excluded, so pad-local offsets (the custom-pad hull) can
+    ride the one convention (``pad_world_outline``)."""
+    return _quarter_turn(mirror_local(local, placement.side), placement.rotation)
 
 
 def world_point(local: Point, placement) -> Point:
@@ -117,24 +177,9 @@ def world_point(local: Point, placement) -> Point:
     validation, so an unvalidated rotation can never silently measure
     as 0.
     """
-    mirrored = mirror_local(local, placement.side)
-    x, y = mirrored.x, mirrored.y
-    rotation = placement.rotation
-    if rotation == 0:
-        pass
-    elif rotation == 90:
-        x, y = y, -x
-    elif rotation == 180:
-        x, y = -x, -y
-    elif rotation == 270:
-        x, y = -y, x
-    else:
-        raise ValueError(
-            f"invalid rotation {rotation!r}: must be one of "
-            f"(0, 90, 180, 270) (90° increments)"
-        )
+    turned = _turn(local, placement)
     pos = placement.pos
-    return Point(pos.x + x, pos.y + y)
+    return Point(pos.x + turned.x, pos.y + turned.y)
 
 
 def pad_world_center(placement, pad_number: str) -> Point:
@@ -146,15 +191,193 @@ def pad_world_center(placement, pad_number: str) -> Point:
     posture) — a None or a made-up point would let a constraint silently
     anchor to nothing.
 
-    ``placement`` is duck-typed (``.ref``, ``.footprint.pads``, ``.pos``,
-    ``.rotation``, ``.side``) so this module never imports the model.
+    ``placement`` is duck-typed (``.ref``, ``.footprint.pad``,
+    ``.footprint.pads``, ``.pos``, ``.rotation``, ``.side``) so this
+    module never imports the model; the by-number read is the footprint's
+    own ``pad()`` (the model's one lookup, #69).
     """
-    for pad in placement.footprint.pads:
-        if pad.number == pad_number:
-            return world_point(pad.local_pos, placement)
-    raise ValueError(
-        f"unknown pad {pad_number!r} on {placement.ref!r}: footprint has pads "
-        f"{tuple(pad.number for pad in placement.footprint.pads)}"
+    pad = placement.footprint.pad(pad_number)
+    if pad is None:
+        raise ValueError(
+            f"unknown pad {pad_number!r} on {placement.ref!r}: footprint has pads "
+            f"{tuple(pad.number for pad in placement.footprint.pads)}"
+        )
+    return world_point(pad.local_pos, placement)
+
+
+_DEFAULT_ROUNDRECT_RRATIO = Decimal("0.25")
+"""KiCad's own roundrect ratio when the token is absent — the value its
+default pad properties carry. One home: the capsule default (here) and
+the exporter's ratio-token emission both read it."""
+
+
+def _local_turn(point: Point, rotation: int) -> Point:
+    """A pad-frame point turned by the pad's library-local 90° multiple —
+    the frame-internal half of the pad's world orientation (no mirror:
+    that is the placement's, applied after)."""
+    return _quarter_turn(point, rotation)
+
+
+def _pad_local_capsule(pad) -> tuple[int, int, int]:
+    """A hull-less pad's capsule in pad-local terms: half extents and
+    radius around the pad centre (ADR-0022's shape model).
+
+    ``circle`` is a point core at r = ⌈size/2⌉; ``oval`` a segment core
+    along its long axis at half length ⌊(long − short)/2⌋ and
+    r = ⌈short/2⌉ — floor plus ceil keeps the capsule over the true
+    stadium on both axes; ``roundrect`` shrinks its rect by
+    r = ⌊ratio × min(size)⌋ (a smaller corner radius is a squarer corner);
+    everything else — ``rect``, and trapezoid/chamfered whose bounding
+    rectangle is the size itself — is the plain rect at r=0.
+    """
+    size_x, size_y = pad.size
+    shape = pad.shape_enum
+    if shape == "circle":
+        return 0, 0, (max(size_x, size_y) + 1) // 2
+    if shape == "oval":
+        long, short = (size_x, size_y) if size_x >= size_y else (size_y, size_x)
+        half_segment = (long - short) // 2
+        radius = (short + 1) // 2
+        if size_x >= size_y:
+            return half_segment, 0, radius
+        return 0, half_segment, radius
+    if shape == "roundrect":
+        radius = int(
+            (pad.roundrect_rratio or _DEFAULT_ROUNDRECT_RRATIO) * min(size_x, size_y)
+        )
+        return max(size_x // 2 - radius, 0), max(size_y // 2 - radius, 0), radius
+    return size_x // 2, size_y // 2, 0
+
+
+def pad_world_outline(placement, pad) -> Capsule:
+    """A pad's copper outline in world coordinates — the ADR-0022 capsule.
+
+    The core composes the pad's world orientation
+    ``placement.rotation + local_rotation`` (library-local angles,
+    ADR-0022): half extents swap at odd 90° multiples. A ``custom`` hull —
+    the importer's bounding rectangle of the primitives, pad-local — turns
+    local innermost then rides ``_turn`` like any footprint-local point;
+    its radius is 0, the hull already the conservative extent. An
+    axis-aligned box cannot change shape under the back-side mirror, so
+    the capsule is mirror-invariant by construction.
+
+    ``placement`` is duck-typed (``.pos``, ``.rotation``, ``.side``); pad
+    is duck-typed (``.local_pos``, ``.size``, ``.shape_enum``,
+    ``.local_rotation``, ``.roundrect_rratio``, ``.hull``) — this module
+    never imports the model.
+    """
+    center = world_point(pad.local_pos, placement)
+    if pad.hull is not None:
+        turn_min = _turn(_local_turn(pad.hull.min, pad.local_rotation), placement)
+        turn_max = _turn(_local_turn(pad.hull.max, pad.local_rotation), placement)
+        core = Rectangle.from_corners(
+            Point(center.x + turn_min.x, center.y + turn_min.y),
+            Point(center.x + turn_max.x, center.y + turn_max.y),
+        )
+        return Capsule(core=core, radius=0)
+    half_x, half_y, radius = _pad_local_capsule(pad)
+    if (placement.rotation + pad.local_rotation) % 180 == 90:
+        half_x, half_y = half_y, half_x
+    return Capsule(
+        core=Rectangle(
+            min=Point(center.x - half_x, center.y - half_y),
+            max=Point(center.x + half_x, center.y + half_y),
+        ),
+        radius=radius,
+    )
+
+
+def _capsule_axis_gaps(a: Capsule, b: Capsule) -> tuple[int, int]:
+    """The cores' per-axis separations, clamped at zero — the two numbers
+    the pair algebra prices (AABB distance, exact integers)."""
+    return (
+        max(0, a.core.min.x - b.core.max.x, b.core.min.x - a.core.max.x),
+        max(0, a.core.min.y - b.core.max.y, b.core.min.y - a.core.max.y),
+    )
+
+
+def capsules_overlap(a: Capsule, b: Capsule) -> bool:
+    """Strict-interior intersection of two pad capsules (ADR-0022).
+
+    Touching is tangency, never overlap — the ADR-0006 convention the
+    short/clearance split leans on: an intersecting pair shorts, a
+    touching pair reads as a zero-gap ``clearance``. Capsule distance is
+    core-to-core distance minus the radii, so the verdict squares — no
+    square root (ADR-0005). One residue the squaring alone misses: two
+    radius-0 cores whose projections strictly overlap on both axes have
+    clamped gaps of zero yet genuinely intersect — the plain rect-rect
+    short — so the box predicate closes that case exactly.
+    """
+    gap_x, gap_y = _capsule_axis_gaps(a, b)
+    span = a.radius + b.radius
+    if gap_x * gap_x + gap_y * gap_y < span * span:
+        return True
+    return span == 0 and _rects_overlap(a.core, b.core)
+
+
+def capsule_gap_nm(a: Capsule, b: Capsule) -> int:
+    """The gap between two pad capsules, floored and clamped at zero.
+
+    ``isqrt`` of the squared core distance minus the radii (ADR-0014's
+    magnitude stance): the floor is verdict-exact against integer rules,
+    since ``isqrt(d) < n ⇔ d < n`` for integer ``n`` — the strict rule (a
+    gap equal to the rule is clean) compares this measure directly.
+    Touching reads 0; an overlap clamps to 0, the shorts branch's alone
+    to price.
+    """
+    gap_x, gap_y = _capsule_axis_gaps(a, b)
+    return max(0, isqrt(gap_x * gap_x + gap_y * gap_y) - a.radius - b.radius)
+
+
+def _grown(box: Rectangle, clearance_nm: int) -> Rectangle:
+    """The box grown by the rule on every side — the copper grids' insert
+    and query extent (#92). A capsule's copper lies inside its slot's
+    copper box, so grown boxes strictly apart prove every pad pair
+    between the two slots clean — the slot-granularity pre-filter
+    ``_apart`` prices."""
+    return Rectangle(
+        min=Point(box.min.x - clearance_nm, box.min.y - clearance_nm),
+        max=Point(box.max.x + clearance_nm, box.max.y + clearance_nm),
+    )
+
+
+def _apart(a: Rectangle, b: Rectangle) -> bool:
+    """Do two ``_grown`` boxes strictly miss on an axis? Each slot's
+    capsules sit at least the rule inside its own box, so the capsules'
+    gap exceeds the rule — every pair clean (the strict rule: a gap equal
+    to the rule is already clean)."""
+    return (
+        a.min.x >= b.max.x
+        or b.min.x >= a.max.x
+        or a.min.y >= b.max.y
+        or b.min.y >= a.max.y
+    )
+
+
+def _boxes_clear(
+    a: Rectangle, pos_a: Point, b: Rectangle, pos_b: Point, clearance_nm: int
+) -> bool:
+    """Are two origin copper boxes, anchored at their positions, strictly
+    apart by at least the rule? Then every pad pair between them is clean:
+    a capsule lies inside its grown box, so the floored capsule gap is at
+    least ``isqrt`` of the box distance."""
+    dx, dy = pos_b.x - pos_a.x, pos_b.y - pos_a.y
+    gap_x = max(0, a.min.x - b.max.x - dx, b.min.x + dx - a.max.x)
+    gap_y = max(0, a.min.y - b.max.y - dy, b.min.y + dy - a.max.y)
+    distance_sq = gap_x * gap_x + gap_y * gap_y
+    return distance_sq > 0 and distance_sq >= clearance_nm * clearance_nm
+
+
+def _clear_of_outline(box: Rectangle, outline: Rectangle, rule: int) -> bool:
+    """Does the box sit at least ``rule`` inside every outline edge line?
+    A copper box that does is skipped unpriced (#98): each pad's signed
+    edge gap — ``core ± radius`` against the line — is at least its
+    box's, so no edge can violate."""
+    return (
+        box.min.x - outline.min.x >= rule
+        and outline.max.x - box.max.x >= rule
+        and box.min.y - outline.min.y >= rule
+        and outline.max.y - box.max.y >= rule
     )
 
 
@@ -246,6 +469,26 @@ def pad_world_bbox(placement) -> Rectangle:
     return union_bbox(pad_box(pad) for pad in pads)
 
 
+def measure_box(placement) -> Rectangle | None:
+    """The box Region, EdgeMount, and KeepTogether measure: the courtyard's
+    AABB, or the pad bounding box when there is no courtyard (ADR-0011's
+    fallback, extended to EdgeMount by #42). A footprint with neither has
+    nothing to measure: ``None`` — the member is skipped, matching the
+    courtyard-less posture of the overlap and containment checks.
+
+    The one definition behind the constraint checks, the Preference
+    hinges, and the solver's clearance arithmetic (#65): a Board that
+    fires a check and its hinge must measure the same box.
+    """
+    yard = world_courtyard(placement)
+    if yard is not None:
+        return shape_aabb(yard)
+    try:
+        return pad_world_bbox(placement)
+    except ValueError:
+        return None
+
+
 def pad_distance_nm(
     placement_a, pad_number_a: str, placement_b, pad_number_b: str
 ) -> int:
@@ -266,25 +509,41 @@ def pad_distance_nm(
     return isqrt(dx * dx + dy * dy)
 
 
-def edge_face_offset_nm(box: Rectangle, outline: Rectangle, edge: str) -> int:
+class Edge(Enum):
+    """An edge of the rectangular board frame, in display terms.
+
+    The board frame is y-down (ADR-0014's transform), so ``TOP`` is the
+    minimum-y edge and ``BOTTOM`` the maximum-y edge; ``LEFT``/``RIGHT``
+    are the minimum/maximum-x edges. Owned here, beside the edge-offset
+    measure that consumes it; EdgeMount names its edge with this — one
+    EdgeMount per edge per ref (ADR-0018's stacking rule).
+    """
+
+    LEFT = "left"
+    RIGHT = "right"
+    TOP = "top"
+    BOTTOM = "bottom"
+
+
+def edge_face_offset_nm(box: Rectangle, outline: Rectangle, edge: Edge) -> int:
     """A box face's signed offset from an outline edge line, in nm.
 
     Positive is past the edge line (outside), zero flush, negative inside
     by that many nm — one function answering EdgeMount's Requirement check
     (unmet past the permitted overhang *or* short of the edge) and its
-    Preference hinge (shortfall on either side, ADR-0014). ``edge`` is one
-    of ``"left"``/``"right"``/``"top"``/``"bottom"`` — the model's ``Edge``
-    value strings; geometry never imports the model, so callers pass
-    ``relation.edge.value`` (the ``world_point`` duck-typing rule).
+    Preference hinge (shortfall on either side, ADR-0014). ``edge`` is the
+    ``Edge`` this module owns, named in display terms: the board frame is
+    y-down (ADR-0014's transform), so ``TOP`` is the minimum-y edge and
+    ``BOTTOM`` the maximum-y edge.
     """
     match edge:
-        case "left":
+        case Edge.LEFT:
             return outline.min.x - box.min.x
-        case "right":
+        case Edge.RIGHT:
             return box.max.x - outline.max.x
-        case "top":
+        case Edge.TOP:
             return outline.min.y - box.min.y
-        case "bottom":
+        case Edge.BOTTOM:
             return box.max.y - outline.max.y
     raise ValueError(
         f"unknown edge {edge!r}: expected 'left', 'right', 'top', or 'bottom'"

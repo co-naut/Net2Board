@@ -14,10 +14,10 @@ and ``-0.000000`` is impossible by construction.
 Back-side placements bake the mirror into the emitted footprint-local
 coordinates and emit their courtyard graphics on ``B.CrtYd``: KiCad
 applies translate + rotate only to footprint-internal geometry on load
-and pairs courtyards per graphics layer (both probed on kicad-cli
-10.0.6, ADR-0006/0010), so the writer owns the left-right flip and the
-side-selecting courtyard layer — together they make the oracle's
-courtyard world identical to ``world_courtyard``'s.
+and pairs courtyards per graphics layer (both probed under
+``ORACLE_TARGET``, ADR-0006/0010), so the writer owns the left-right
+flip and the side-selecting courtyard layer — together they make the
+oracle's courtyard world identical to ``world_courtyard``'s.
 
 ``export_dsn(board, rules) -> str`` is the pure Freerouting handoff
 (ADR-0017): Specctra floor only, routing rules a frozen argument and
@@ -40,12 +40,29 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from net2board.geometry import Point, Rectangle, Shape, mirror_local
+from net2board.geometry import (
+    _DEFAULT_ROUNDRECT_RRATIO,
+    Point,
+    Rectangle,
+    Shape,
+    mirror_local,
+)
 from net2board.model import Board, Pad, Placement
 
-__all__ = ["DsnRules", "export_dsn", "export_pcb"]
+__all__ = ["ORACLE_TARGET", "RouteSizes", "export_dsn", "export_pcb"]
 
 FILE_FORMAT_VERSION = 20241229
+ORACLE_TARGET = "kicad-cli >= 10.0.6"
+"""The oracle floor the exporter's behavioral assumptions are probed
+against (#86). The file-format version above pins the syntax; this pins
+the *behavior*: every probe-pinned assumption in this module — the
+writer-owned mirror, the per-graphics-layer courtyard pairing,
+``(locked yes)``, the pad world-rotation token — was verified against an
+oracle at or above this floor (10.0.6; installed at declaration time:
+10.0.7). The discipline is KiCad's protobuf policy, additive-only: no
+emission change may ride on behavior outside the floor, and the slow
+tier (``pytest -m slow``) asserts the installed oracle against it before
+any parity claim is trusted — probe on upgrade, then move the floor."""
 GENERATOR = "net2board"
 GENERATOR_VERSION = "1"
 
@@ -157,8 +174,8 @@ def _footprint_block(
 
     ``locked`` is mobility between Boards (ADR-0012) and serializes as
     pcbnew's own first token line, ``(locked yes)``, before ``(layer …)`` —
-    probed on kicad-cli 10.0.6 (parses; ``IsLocked()`` reads back True).
-    Unlocked footprints carry no lock token, so the M1 bytes are
+    probed under ``ORACLE_TARGET`` (parses; ``IsLocked()`` reads back
+    True). Unlocked footprints carry no lock token, so the M1 bytes are
     unchanged.
     """
     lines = [
@@ -175,7 +192,16 @@ def _footprint_block(
     lines.extend(_reference_property_block(placement.ref, placement.side))
     lines.extend(_courtyard_block(placement.footprint.courtyard, placement.side))
     for pad in placement.footprint.pads:
-        lines.extend(_pad_block(placement.ref, pad, placement.side, net_ids, pad_nets))
+        lines.extend(
+            _pad_block(
+                placement.ref,
+                pad,
+                placement.side,
+                net_ids,
+                pad_nets,
+                placement.rotation,
+            )
+        )
     lines.append("\t)")
     return lines
 
@@ -211,7 +237,7 @@ def _courtyard_block(courtyard: Shape | None, side: str) -> list[str]:
         end = mirror_local(courtyard.end, side)
     # The courtyard layer follows the placement side: the oracle pairs
     # courtyards per graphics layer (F.CrtYd never interacts with B.CrtYd,
-    # probed on kicad-cli 10.0.6), so this is what makes cross-side pairs
+    # probed under ORACLE_TARGET), so this is what makes cross-side pairs
     # exempt in the oracle exactly as our DRC exempts them.
     courtyard_layer = "F.CrtYd" if side == "F.Cu" else "B.CrtYd"
     return [
@@ -230,14 +256,42 @@ def _pad_block(
     side: str,
     net_ids: dict[str, int],
     pad_nets: dict[tuple[str, str], str],
+    placement_rotation: int = 0,
 ) -> list[str]:
+    """One pad form. The ``(at x y rot)`` token is the pad's *world*
+    orientation: the placement's rotation **plus the pad's library-local
+    rotation** (ADR-0022 — pad angles are library-local, not absolute),
+    plus the writer's own 180 on the back, whose left-right mirror is
+    baked into the emitted local positions — reduced mod 360, token-less
+    at zero, pcbnew's canonical form. Probe-pinned under
+    ``ORACLE_TARGET`` (#73): the loader rotates pad positions with the
+    placement but reads a missing token as world 0 without inheriting
+    the footprint's, so a rotated placement written token-less renders
+    with unrotated pads and DRC sees overlaps the model does not. The
+    importer guarantees ``local_rotation`` is a 90° multiple, where the
+    mirror's 180 composes exactly; every committed referenced fixture
+    carries 0, so the term is latent until a rotated library pad
+    arrives.
+    """
     pad_type = "thru_hole" if pad.drill is not None else "smd"
     net_name = pad_nets.get((ref, pad.number), "")
+    world_rotation = (placement_rotation + pad.local_rotation) % 360
+    if side == "B.Cu":
+        world_rotation = (world_rotation + 180) % 360
+    at = f"\t\t\t(at {_pt(mirror_local(pad.local_pos, side))}"
+    if world_rotation:
+        at += f" {world_rotation}"
     lines = [
         f'\t\t(pad "{_esc(pad.number)}" {pad_type} {_esc(pad.shape_enum)}',
-        f"\t\t\t(at {_pt(mirror_local(pad.local_pos, side))})",
+        at + ")",
         f"\t\t\t(size {_mm(pad.size[0])} {_mm(pad.size[1])})",
     ]
+    if pad.shape_enum == "roundrect":
+        # the checker prices the roundrect's shrunk core (ADR-0022) — the
+        # render must round the same corners; an absent token is KiCad's
+        # own 0.25 default
+        ratio = pad.roundrect_rratio or _DEFAULT_ROUNDRECT_RRATIO
+        lines.append(f"\t\t\t(roundrect_rratio {ratio})")
     if pad.drill is not None:
         lines.append(f"\t\t\t(drill {_mm(pad.drill)})")
     layers = " ".join(f'"{_pad_layer(token, side)}"' for token in pad.layers)
@@ -302,41 +356,54 @@ _DSN_CLASS_NAME = "DEFAULT"
 
 
 @dataclass(frozen=True)
-class DsnRules:
-    """The frozen routing-rules argument to ``export_dsn`` (ADR-0017).
+class RouteSizes:
+    """The frozen routing-sizes argument to ``export_dsn`` (ADR-0017 as
+    narrowed by ADR-0020, renamed by ADR-0024).
 
-    One width, one clearance, one via padstack — deliberately not Board
-    state: identical copper routed under different rules must not compare
-    equal, and per-net widths would mean NetClass, which the M2 map holds
-    out of scope. Defaults are the probed research set (minimal DSN that
-    routed clean under freerouting-2.4.1); nanometres, like every other
-    engine coordinate.
+    One track width, one via padstack — sizes the router may lay, never
+    limits the checker reads. The clearances are **not** here: they are
+    Board state (``board.design_rules``, ADR-0020), read at export time so
+    router and checker price one number by construction. Named apart from
+    ``DesignRules`` — the one rules set legality depends on. Defaults are
+    the probed research set (minimal DSN that routed clean under
+    freerouting-2.4.1); nanometres, like every other engine coordinate.
     """
 
     width_nm: int = 250_000
-    clearance_nm: int = 250_000
     via_diameter_nm: int = 800_000
 
     def __post_init__(self) -> None:
-        if min(self.width_nm, self.clearance_nm, self.via_diameter_nm) <= 0:
+        if min(self.width_nm, self.via_diameter_nm) <= 0:
             raise ValueError(
-                f"DsnRules must be positive: width {self.width_nm} nm, "
-                f"clearance {self.clearance_nm} nm, via diameter "
-                f"{self.via_diameter_nm} nm"
+                f"RouteSizes must be positive: width {self.width_nm} nm, "
+                f"via diameter {self.via_diameter_nm} nm"
             )
 
 
 # A frozen singleton — documented defaults, shareable as a default arg.
-_DEFAULT_DSN_RULES = DsnRules()
+_DEFAULT_SIZES = RouteSizes()
+
+_EDGE_CLASS = "edge"
+"""The outline's DSN clearance-class name — underscore-free: the reader
+splits pair tokens on ``_``, so the bare name must carry none (#84)."""
+
+_EDGE_PAIR_ITEMS = ("wire", "via", "smd", "pin", "area")
+"""Every item class the pair rules price against the edge class — the
+router override's own all-classes loop. A named-but-unpriced class zeroes
+the outline's clearance outright; pricing every item class is the
+emission's invariant (#84's traps)."""
 
 
-def export_dsn(board: Board, rules: DsnRules = _DEFAULT_DSN_RULES) -> str:
+def export_dsn(board: Board, sizes: RouteSizes = _DEFAULT_SIZES) -> str:
     """Serialize ``board`` to canonical Specctra DSN text for Freerouting.
 
     Placements only — unplaced components are silently ignored by the
     router (probed), and a net left with no placed pins is dropped rather
     than emitted empty. Serializer only: no jar, no log, no SES — the
-    entire engine-side Freerouting surface (ADR-0017).
+    entire engine-side Freerouting surface (ADR-0017). The clearances ride
+    ``board.design_rules`` (ADR-0020): the general copper clearance in the
+    rule blocks, the edge number as the outline's priced clearance class
+    (ADR-0022, #84's pinned grammar).
     """
     copper = _copper_layers(board.stackup)
     placements = sorted(board.placements, key=lambda p: p.ref)
@@ -347,7 +414,7 @@ def export_dsn(board: Board, rules: DsnRules = _DEFAULT_DSN_RULES) -> str:
             "block cannot represent it; the board is malformed"
         )
     padstacks: dict[str, list[str]] = {}
-    via_name = _via_padstack(padstacks, rules, copper)
+    via_name = _via_padstack(padstacks, sizes, copper)
     images: dict[str, list[str]] = {}
     component_lines: list[str] = []
     for image_name, image_placements in _grouped_by_image(placements):
@@ -362,6 +429,7 @@ def export_dsn(board: Board, rules: DsnRules = _DEFAULT_DSN_RULES) -> str:
             [f"\t\t(component {_dsn_token(image_name)}", *places, "\t\t)"]
         )
     net_lines, net_tokens = _network_lines(board, placed_refs)
+    clearance_nm = board.design_rules.clearance_nm
     lines = [
         f"(pcb {_DSN_BOARD_NAME}",
         "\t(resolution um 1)",
@@ -369,7 +437,7 @@ def export_dsn(board: Board, rules: DsnRules = _DEFAULT_DSN_RULES) -> str:
         *(f"\t\t(layer {name} (type signal))" for name in copper),
         *_boundary_lines(board.outline),
         f"\t\t(via {via_name})",
-        *_rule_lines(rules),
+        *_rule_lines(board, sizes),
         "\t)",
         "\t(placement",
         *(line for block in component_lines for line in block),
@@ -396,7 +464,7 @@ def export_dsn(board: Board, rules: DsnRules = _DEFAULT_DSN_RULES) -> str:
         "\t)",
         "\t(network",
         *net_lines,
-        *_class_lines(net_tokens, via_name, rules),
+        *_class_lines(net_tokens, via_name, sizes, clearance_nm),
         "\t)",
         ")",
     ]
@@ -580,9 +648,9 @@ def _grouped_by_image(
 
 
 def _via_padstack(
-    padstacks: dict[str, list[str]], rules: DsnRules, copper: tuple[str, ...]
+    padstacks: dict[str, list[str]], sizes: RouteSizes, copper: tuple[str, ...]
 ) -> str:
-    diameter = _um(rules.via_diameter_nm)
+    diameter = _um(sizes.via_diameter_nm)
     name = f"Via_{diameter}"
     padstacks[name] = [f"\t\t\t(shape (circle {layer} {diameter}))" for layer in copper]
     return name
@@ -592,7 +660,10 @@ def _boundary_lines(outline: Rectangle) -> list[str]:
     """The board outline as Specctra's one hard-required structure block.
 
     Closed five-point polygon from the min corner; y negated like every
-    other DSN coordinate.
+    other DSN coordinate. The block names the outline's clearance class —
+    the edge number's router-facing ride (ADR-0022); the class is priced
+    by the structure rule's pair values, never named alone (#84's trap:
+    an unpriced class zeroes the outline's clearance outright).
     """
     points = (
         (outline.min.x, outline.min.y),
@@ -602,14 +673,29 @@ def _boundary_lines(outline: Rectangle) -> list[str]:
         (outline.min.x, outline.min.y),
     )
     rendered = " ".join(f"{_um(x)} {_um(-y)}" for x, y in points)
-    return ["\t\t(boundary", f"\t\t\t(path pcb 0 {rendered})", "\t\t)"]
+    return [
+        "\t\t(boundary",
+        f"\t\t\t(path pcb 0 {rendered})",
+        f"\t\t\t(clearance_class {_EDGE_CLASS})",
+        "\t\t)",
+    ]
 
 
-def _rule_lines(rules: DsnRules) -> list[str]:
+def _rule_lines(board: Board, sizes: RouteSizes) -> list[str]:
+    """The structure rule: the frozen width, the Board's copper clearance,
+    then the edge class's named pair values — after the general
+    ``(clearance …)``, whose ``setDefaultValue`` clobbers any named rule
+    placed before it (#84's first trap). The pair token is
+    ``<item>_<class>``; the class name stays underscore-free."""
+    edge_um = _um(board.design_rules.edge_clearance_nm)
     return [
         "\t\t(rule",
-        f"\t\t\t(width {_um(rules.width_nm)})",
-        f"\t\t\t(clearance {_um(rules.clearance_nm)})",
+        f"\t\t\t(width {_um(sizes.width_nm)})",
+        f"\t\t\t(clearance {_um(board.design_rules.clearance_nm)})",
+        *(
+            f"\t\t\t(clearance {edge_um} (type {item}_{_EDGE_CLASS}))"
+            for item in _EDGE_PAIR_ITEMS
+        ),
         "\t\t)",
     ]
 
@@ -637,13 +723,16 @@ def _network_lines(board: Board, placed_refs: set[str]) -> tuple[list[str], list
     return lines, tokens
 
 
-def _class_lines(net_tokens: list[str], via_name: str, rules: DsnRules) -> list[str]:
+def _class_lines(
+    net_tokens: list[str], via_name: str, sizes: RouteSizes, clearance_nm: int
+) -> list[str]:
     """The DEFAULT class: how the router learns its via and its rules.
 
     Structure-level ``(via …)`` declares the padstack; ``use_via`` is
     what makes the router actually reach for it (the ablation: dropping
     either routes nothing), and the class rule is where the width lands
-    in the SES wires (probed: 250 in, 250 out).
+    in the SES wires (probed: 250 in, 250 out). The clearance is the
+    Board's (ADR-0020).
     """
     if not net_tokens:
         return []
@@ -654,8 +743,8 @@ def _class_lines(net_tokens: list[str], via_name: str, rules: DsnRules) -> list[
         f"\t\t\t\t(use_via {via_name})",
         "\t\t\t)",
         "\t\t\t(rule",
-        f"\t\t\t\t(width {_um(rules.width_nm)})",
-        f"\t\t\t\t(clearance {_um(rules.clearance_nm)})",
+        f"\t\t\t\t(width {_um(sizes.width_nm)})",
+        f"\t\t\t\t(clearance {_um(clearance_nm)})",
         "\t\t\t)",
         "\t\t)",
     ]

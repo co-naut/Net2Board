@@ -17,6 +17,7 @@ from net2board.boardspec import (
     FootprintResolveError,
     PinPadBindingError,
     UnsupportedCourtyardShape,
+    UnsupportedPadRotation,
 )
 from net2board.errors import Net2BoardError
 
@@ -25,6 +26,7 @@ SPEC_ERRORS = (
     FootprintNotFound,
     FootprintResolveError,
     UnsupportedCourtyardShape,
+    UnsupportedPadRotation,
     PinPadBindingError,
 )
 

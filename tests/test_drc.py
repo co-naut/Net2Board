@@ -1,10 +1,11 @@
 """S7 — Violation and run_drc: the agent's feedback channel (ADR-0009).
 
 The struct is pinned field-for-field against the oracle's ``courtyards_overlap``
-signal; determinism is the contract — same board, same tuple, immune to scan
-order — enforced by canonical ref order inside each violation plus an explicit
+signal; determinism is the contract — same board, same tuple, immune to
+iteration order — enforced by canonical ref order inside each violation plus an explicit
 final sort. Cross-side pairs are exempt and courtyard-less placements are
-skipped, matching the KiCad oracle (probed on kicad-cli 10.0.6).
+skipped, matching the KiCad oracle (probed under the exporter's
+``ORACLE_TARGET``).
 
 The M2 containment check (``courtyard_outside_outline``, ADR-0018) has no
 oracle analogue: closed containment, courtyard-less placements skipped, and
@@ -37,6 +38,13 @@ def overlapped_board():
         .with_placement("R1", *R1_AT, 0, "F.Cu")
         .with_placement("R2", *R2_AT, 0, "F.Cu")
     )
+
+
+def typed_findings(board, violation_type):
+    """The findings of one type — the pad-copper checks share every
+    fixture board with the older checks (#91), so struct tests scope to
+    their subject."""
+    return tuple(v for v in run_drc(board) if v.type is violation_type)
 
 
 def no_courtyard_board():
@@ -107,35 +115,46 @@ def mount(ref: str, edge: Edge, kind=REQUIREMENT, bound=None, id: str | None = N
 
 class TestViolationStruct:
     def test_overlap_yields_exactly_one_violation(self):
-        (violation,) = run_drc(overlapped_board())
-        assert violation.type is ViolationType.COURTYARDS_OVERLAP
+        (violation,) = typed_findings(
+            overlapped_board(), ViolationType.COURTYARDS_OVERLAP
+        )
         assert violation.severity is Severity.ERROR
 
     def test_refs_and_locations_name_both_placements(self):
-        (violation,) = run_drc(overlapped_board())
+        (violation,) = typed_findings(
+            overlapped_board(), ViolationType.COURTYARDS_OVERLAP
+        )
         assert violation.offending_refs == ("placement:R1", "placement:R2")
         assert violation.locations == (Point(*R1_AT), Point(*R2_AT))
 
     def test_locations_pair_positionally_with_canonical_refs(self):
         # refs sort lexicographically; each location follows its own ref —
         # not the locations' own order
-        (violation,) = run_drc(overlapped_board())
+        (violation,) = typed_findings(
+            overlapped_board(), ViolationType.COURTYARDS_OVERLAP
+        )
         assert R1_AT[0] > R2_AT[0]
         assert violation.locations[0] == Point(*R1_AT)
 
     def test_description_is_pinned(self):
-        (violation,) = run_drc(overlapped_board())
+        (violation,) = typed_findings(
+            overlapped_board(), ViolationType.COURTYARDS_OVERLAP
+        )
         assert violation.description == (
             "Courtyards overlap: placement:R1 and placement:R2"
         )
 
     def test_violation_is_frozen(self):
-        (violation,) = run_drc(overlapped_board())
+        (violation,) = typed_findings(
+            overlapped_board(), ViolationType.COURTYARDS_OVERLAP
+        )
         with pytest.raises(FrozenInstanceError):
             violation.severity = Severity.WARNING
 
     def test_asdict_round_trips(self):
-        (violation,) = run_drc(overlapped_board())
+        (violation,) = typed_findings(
+            overlapped_board(), ViolationType.COURTYARDS_OVERLAP
+        )
         assert asdict(violation) == {
             "type": ViolationType.COURTYARDS_OVERLAP,
             "severity": Severity.ERROR,
@@ -160,7 +179,7 @@ class TestDeterminism:
         board = overlapped_board()
         assert run_drc(board) == run_drc(board)
 
-    def test_immune_to_scan_order(self):
+    def test_immune_to_placement_order(self):
         r1_first = (
             fresh_board()
             .with_placement("R1", *R1_AT, 0, "F.Cu")
@@ -180,7 +199,7 @@ class TestDeterminism:
             .with_placement("R2", X, Y, 0, "F.Cu")
             .with_placement("R3", X, Y, 0, "F.Cu")
         )
-        violations = run_drc(board)
+        violations = typed_findings(board, ViolationType.COURTYARDS_OVERLAP)
         assert [v.offending_refs for v in violations] == [
             ("placement:R1", "placement:R2"),
             ("placement:R1", "placement:R3"),
@@ -189,20 +208,24 @@ class TestDeterminism:
 
     def test_moved_board_changes_only_the_real_difference(self):
         board = overlapped_board()
-        (violation,) = run_drc(board)
+        (violation,) = typed_findings(board, ViolationType.COURTYARDS_OVERLAP)
         moved = board.with_placement("R2", 30_000_000, 25_000_000, 0, "F.Cu")
         assert run_drc(moved) == ()
-        assert run_drc(board) == (violation,)  # the snapshot is untouched
+        # the snapshot is untouched
+        assert typed_findings(board, ViolationType.COURTYARDS_OVERLAP) == (violation,)
 
 
 class TestCheckScope:
     def test_cross_side_pairs_are_exempt(self):
+        # the courtyard exemption is the overlap check's; the coincident
+        # *.Cu (THT) pads genuinely share B.Cu copper and short — the
+        # pad-copper checks' own cross-side rule is layer-set disjointness
         board = (
             fresh_board()
             .with_placement("R1", X, Y, 0, "F.Cu")
             .with_placement("R2", X, Y, 0, "B.Cu")
         )
-        assert run_drc(board) == ()
+        assert typed_findings(board, ViolationType.COURTYARDS_OVERLAP) == ()
 
     def test_no_courtyard_placements_are_skipped_not_flagged(self):
         assert run_drc(no_courtyard_board()) == ()
@@ -214,31 +237,38 @@ class TestCheckScope:
         assert run_drc(fresh_board()) == ()
 
     def test_clear_board_is_clean(self):
-        # R3 sits at y=20M, not 25M: rotated onto B.Cu its circle courtyard
+        # R3 sits at y=18M, not 25M: rotated onto B.Cu its circle courtyard
         # would otherwise poke ~3.16 mm past the bottom edge — a real
-        # containment finding since the M2 check (ADR-0018)
+        # containment finding since the M2 check (ADR-0018) — and its
+        # far pad rides 1 mm clear of the bottom edge, past the copper
+        # rule the pad checks price since #91
         board = (
             fresh_board()
             .with_placement("R1", X, Y, 0, "F.Cu")
             .with_placement("R2", 30_000_000, 25_000_000, 0, "F.Cu")
-            .with_placement("R3", 15_000_000, 20_000_000, 90, "B.Cu")
+            .with_placement("R3", 15_000_000, 18_000_000, 90, "B.Cu")
         )
         assert run_drc(board) == ()
 
 
 class TestCourtyardOutsideOutline:
     def test_overhang_yields_exactly_one_error(self):
-        (violation,) = run_drc(left_overhang_board())
-        assert violation.type is ViolationType.COURTYARD_OUTSIDE_OUTLINE
+        (violation,) = typed_findings(
+            left_overhang_board(), ViolationType.COURTYARD_OUTSIDE_OUTLINE
+        )
         assert violation.severity is Severity.ERROR
 
     def test_finding_names_the_placement_anchor_at_its_position(self):
-        (violation,) = run_drc(left_overhang_board())
+        (violation,) = typed_findings(
+            left_overhang_board(), ViolationType.COURTYARD_OUTSIDE_OUTLINE
+        )
         assert violation.offending_refs == ("placement:R1",)
         assert violation.locations == (Point(1_000_000, 10_000_000),)
 
     def test_description_is_pinned(self):
-        (violation,) = run_drc(left_overhang_board())
+        (violation,) = typed_findings(
+            left_overhang_board(), ViolationType.COURTYARD_OUTSIDE_OUTLINE
+        )
         assert violation.description == (
             "Courtyard outside board outline: placement:R1"
         )
@@ -249,9 +279,12 @@ class TestCourtyardOutsideOutline:
         )
 
     def test_tangent_to_the_edge_is_contained(self):
-        # Closed containment: courtyard min.x = 0 exactly, C2-style (ADR-0018)
+        # Closed containment: courtyard min.x = 0 exactly, C2-style (ADR-0018).
+        # The pad a half-millimetre inside that edge is the copper-edge
+        # check's own adjacency fact (#91) — the containment answer is
+        # silent either way.
         board = fresh_board().with_placement("R1", 1_050_000, 10_000_000, 0, "F.Cu")
-        assert run_drc(board) == ()
+        assert typed_findings(board, ViolationType.COURTYARD_OUTSIDE_OUTLINE) == ()
 
     def test_fully_interior_is_clean(self):
         board = fresh_board().with_placement("R1", 2_000_000, 10_000_000, 0, "F.Cu")
@@ -294,12 +327,12 @@ class TestCourtyardOutsideOutline:
     def test_exemption_is_scoped_to_the_stated_edge(self):
         # ADR-0018's P3 case: exempt on left, still checked on top. The
         # bound covers the measured 50 µm overhang (#42's check), so the
-        # finding is the unstated top edge's alone
+        # finding is the unstated top edge's alone — the pad's own
+        # top-edge adjacency is the copper check's parallel fact (#91)
         board = corner_overhang_board().with_constraint(
             mount("R1", Edge.LEFT, bound=550_000)
         )
-        (violation,) = run_drc(board)
-        assert violation.type is ViolationType.COURTYARD_OUTSIDE_OUTLINE
+        (violation,) = typed_findings(board, ViolationType.COURTYARD_OUTSIDE_OUTLINE)
         assert violation.offending_refs == ("placement:R1",)
 
     def test_stacking_one_mount_per_edge_exempts_the_corner(self):
@@ -322,7 +355,7 @@ class TestCourtyardOutsideOutline:
         board = left_overhang_board().with_constraint(
             mount("R1", Edge.LEFT, kind=Preference(), id="soft")
         )
-        (violation,) = run_drc(board)
+        (violation,) = typed_findings(board, ViolationType.COURTYARD_OUTSIDE_OUTLINE)
         assert violation.type is ViolationType.COURTYARD_OUTSIDE_OUTLINE
 
     def test_group_targeted_mount_expands_to_its_members(self):
@@ -357,19 +390,32 @@ class TestCourtyardOutsideOutline:
             .with_placement("R2", 1_000_000, 20_000_000, 0, "F.Cu")
         )
         assert run_drc(r1_first) == run_drc(r2_first)
-        assert [v.offending_refs for v in run_drc(r1_first)] == [
+        assert [
+            v.offending_refs
+            for v in typed_findings(r1_first, ViolationType.COURTYARD_OUTSIDE_OUTLINE)
+        ] == [
             ("placement:R1",),
             ("placement:R2",),
         ]
 
-    def test_coexists_with_the_overlap_check_in_the_sorted_tuple(self):
+    def test_coexists_with_the_other_checks_in_the_sorted_tuple(self):
+        # R2 lands on the hanging part: every family reports — the pads'
+        # edge adjacency (pad 1 and the extra pad 9, per part), the
+        # containment, the overlap, and one copper short per coincident
+        # pad pair — sorted by type value
         board = left_overhang_board().with_placement(
             "R2", 1_000_000, 10_000_000, 0, "F.Cu"
         )
         assert [v.type.value for v in run_drc(board)] == [
+            "copper_edge_clearance",
+            "copper_edge_clearance",
+            "copper_edge_clearance",
+            "copper_edge_clearance",
             "courtyard_outside_outline",
             "courtyard_outside_outline",
             "courtyards_overlap",
+            "shorting_items",
+            "shorting_items",
         ]
 
 
@@ -381,10 +427,11 @@ class TestLocalityCompanion:
 
     def test_the_containment_check_was_the_protocols_first_validator(self):
         # ADR-0018's check validated the protocol alone; #42's four
-        # constraint checks declare companions of their own (five of six
-        # checks — only the all-pairs overlap scan has none)
+        # constraint checks declare companions of their own, and #91's
+        # three copper checks do too — every registered check but the
+        # all-pairs overlap pass (native in the Evaluator) declares
         declaring = [check for check in CHECKS if check in drc.COMPANIONS]
-        assert len(declaring) == 5
+        assert len(declaring) == len(CHECKS) - 1
         assert declaring[0] is CHECKS[1]  # containment: first to declare
         (violation,) = declaring[0](left_overhang_board())
         assert violation.type is ViolationType.COURTYARD_OUTSIDE_OUTLINE
@@ -451,7 +498,9 @@ class TestPipeline:
 
 # One sample (refs, locations) pair per type, shaped to the convention the
 # type's wording reads: plain findings pair refs with locations 1:1, the
-# constraint findings lead with the location-less ``constraint:<id>``.
+# constraint findings lead with the location-less ``constraint:<id>``. The
+# pad findings' locations sit on the fixture pads' world centres — the
+# wording recovers the pad identity from them.
 _SAMPLE_FINDINGS = {
     ViolationType.COURTYARDS_OVERLAP: (
         ("placement:R1", "placement:R2"),
@@ -468,6 +517,15 @@ _SAMPLE_FINDINGS = {
         ("constraint:c1", "placement:R1"),
         (Point(X, Y),),
     ),
+    ViolationType.SHORTING_ITEMS: (
+        ("placement:R1", "placement:R2"),
+        (Point(*R1_AT), Point(*R2_AT)),
+    ),
+    ViolationType.CLEARANCE: (
+        ("placement:R1", "placement:R2"),
+        (Point(*R1_AT), Point(*R2_AT)),
+    ),
+    ViolationType.COPPER_EDGE_CLEARANCE: (("placement:R1",), (Point(*R1_AT),)),
 }
 
 

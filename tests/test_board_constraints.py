@@ -206,6 +206,38 @@ class TestConstraintValidation:
             board.with_constraint(region(target="group:ghost"))
         assert board.constraints == ()
 
+    def test_an_unhandled_relation_fails_validation(self, board, monkeypatch):
+        """Tomorrow's sixth relation — past the construction gate, never
+        given a validation arm — fails loudly, not silently."""
+
+        class Ghost:
+            """A relation the dispatch has no arm for."""
+
+        monkeypatch.setattr(Constraint, "__post_init__", lambda self: None)
+        smuggled = Constraint(id="ghost", kind=Requirement(), relation=Ghost())
+        with pytest.raises(ConstraintError, match="unknown relation"):
+            board.with_constraint(smuggled)
+
+
+class TestAnchorMembers:
+    """The Board read that expands a relation's target to placement refs
+    (ADR-0011) — one definition for the checks, hinges, and solver (#65)."""
+
+    def test_a_placement_anchor_is_that_ref_alone(self, board):
+        assert board.anchor_members("placement:R1") == ("R1",)
+
+    def test_a_group_anchor_is_its_stored_refs(self, board):
+        grouped = board.with_group(chips_group())
+        assert grouped.anchor_members("group:chips") == ("R1", "R2")
+
+    def test_an_unknown_group_raises(self, board):
+        with pytest.raises(UnknownConstraintRef, match="group:nope"):
+            board.anchor_members("group:nope")
+
+    def test_a_malformed_anchor_raises(self, board):
+        with pytest.raises(ConstraintError, match="malformed anchor"):
+            board.anchor_members("R1")
+
 
 class TestWithGroup:
     def test_states_a_group(self, board):

@@ -21,9 +21,9 @@ def build_board(spec: BoardSpec) -> Board:
         Component(ref=comp.ref, footprint=_build_footprint(spec, comp.entry_name))
         for comp in spec.netlist_ir.comps
     )
-    pads_by_ref = {comp.ref: comp.footprint.pads for comp in components}
+    footprint_by_ref = {comp.ref: comp.footprint for comp in components}
     nets = tuple(
-        Net(name=net.name, pins=tuple(_bind_pins(net, pads_by_ref)))
+        Net(name=net.name, pins=tuple(_bind_pins(net, footprint_by_ref)))
         for net in spec.netlist_ir.nets
     )
     return Board(
@@ -32,6 +32,7 @@ def build_board(spec: BoardSpec) -> Board:
         nets=nets,
         outline=spec.outline,
         stackup=spec.stackup,
+        design_rules=spec.design_rules,
     )
 
 
@@ -51,6 +52,7 @@ def _to_footprint(footprint_ir: FootprintIR) -> Footprint:
         entry_name=footprint_ir.entry_name,
         pads=tuple(_to_pad(pad_ir) for pad_ir in footprint_ir.pads),
         courtyard=footprint_ir.courtyard,
+        net_tie_groups=footprint_ir.net_tie_groups,
     )
 
 
@@ -62,16 +64,19 @@ def _to_pad(pad_ir: PadIR) -> Pad:
         drill=pad_ir.drill,
         layers=pad_ir.layers,
         shape_enum=pad_ir.shape_enum,
+        local_rotation=pad_ir.local_rotation,
+        roundrect_rratio=pad_ir.roundrect_rratio,
+        hull=pad_ir.hull,
     )
 
 
-def _bind_pins(net: NetIR, pads_by_ref: dict):
+def _bind_pins(net: NetIR, footprint_by_ref: dict):
     for ref, pin in net.nodes:
-        pads = pads_by_ref.get(ref)
-        if pads is None:
+        footprint = footprint_by_ref.get(ref)
+        if footprint is None:
             raise ValueError(
                 f"net {net.name!r} references unknown component ref {ref!r}"
             )
-        if not any(pad.number == pin for pad in pads):
+        if footprint.pad(pin) is None:
             raise PinPadBindingError(ref=ref, pin_number=pin)
         yield (ref, pin)

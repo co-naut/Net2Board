@@ -41,6 +41,7 @@ kicad_demo/ecc83/footprints.pretty/*
 kicad_demo/tiny_tapeout/*
 !kicad_demo/tiny_tapeout/README.md
 !kicad_demo/tiny_tapeout/tinytapeout.net
+!kicad_demo/tiny_tapeout/tinytapeout-demo.kicad_pcb
 !kicad_demo/tiny_tapeout/footprints.pretty/
 kicad_demo/tiny_tapeout/footprints.pretty/*
 !kicad_demo/tiny_tapeout/footprints.pretty/*.kicad_mod

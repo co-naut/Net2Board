@@ -29,10 +29,9 @@ validation errors.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 
 from net2board.errors import Net2BoardError
-from net2board.geometry import Rectangle
+from net2board.geometry import Edge, Rectangle
 
 __all__ = [
     "Constraint",
@@ -129,19 +128,22 @@ def anchor_parts(anchor) -> tuple[str, str]:
     )
 
 
-class Edge(Enum):
-    """An edge of the rectangular board frame, in display terms.
+def net_ref(name: str) -> str:
+    """The ref form naming a net (ADR-0004): ``net:<name>``.
 
-    The board frame is y-down (ADR-0014's transform), so ``TOP`` is the
-    minimum-y edge and ``BOTTOM`` the maximum-y edge; ``LEFT``/``RIGHT``
-    are the minimum/maximum-x edges. EdgeMount names its edge with this —
-    one EdgeMount per edge per ref (ADR-0018's stacking rule).
+    The one construction site for the form — parse it back with
+    ``split(":", 1)`` at a boundary, never rebuild it ad hoc.
     """
+    return f"net:{name}"
 
-    LEFT = "left"
-    RIGHT = "right"
-    TOP = "top"
-    BOTTOM = "bottom"
+
+def constraint_ref(id: str) -> str:
+    """The ref form naming a Constraint (ADR-0004): ``constraint:<id>``.
+
+    The one construction site for the form — the Objective's term refs
+    and a Violation's leading offending ref ride on it.
+    """
+    return f"constraint:{id}"
 
 
 @dataclass(frozen=True)

@@ -1,16 +1,21 @@
-"""S3 — courtyard parse across the 10 fixture footprints (ADR-0006).
+"""S3 — courtyard parse across the fixture footprints (ADR-0006).
 
 The importer reads ``F.CrtYd`` only: rectangles arrive as 4 closed
 axis-aligned ``fp_line``s, circles as one ``fp_circle``. Circles store
 integer ``radius_sq`` (the defining ``end`` rides along for export,
 ADR-0010); absent courtyard is ``None`` — a valid state the overlap check
 skips.
+
+ADR-0022 ends the library's whole-parseable property:
+``Valve_ECC-83-2`` — unreferenced by the committed netlist — carries
+socket pads at 18°–342°, and a pad angle off the 90° multiples raises at
+load rather than checking pad geometry silently wrong.
 """
 
 import pytest
 
 from conftest import ECC83_FP_DIR
-from net2board.boardspec import UnsupportedCourtyardShape
+from net2board.boardspec import UnsupportedCourtyardShape, UnsupportedPadRotation
 from net2board.geometry import Circle, Point, Rectangle
 from net2board.ir import parse_footprint
 
@@ -26,8 +31,8 @@ CIRCLE_COURTYARDS = {
     "CP_Radial_D12.5mm_P7.50mm",
     "MountingHole_3.2mm_M3_DIN965_Pad",
     "Valve_ECC-83-1",
-    "Valve_ECC-83-2",
 }
+ROTATED_PADS = {"Valve_ECC-83-2"}
 
 
 def parse(name: str):
@@ -35,14 +40,32 @@ def parse(name: str):
 
 
 class TestShapeKinds:
-    def test_five_rectangles_and_five_circles_across_the_library(self):
+    def test_five_rectangles_four_circles_one_rotated_across_the_library(self):
         files = sorted(ECC83_FP_DIR.glob("*.kicad_mod"))
         assert len(files) == 10
-        assert {f.stem for f in files} == RECT_COURTYARDS | CIRCLE_COURTYARDS
+        assert {f.stem for f in files} == (
+            RECT_COURTYARDS | CIRCLE_COURTYARDS | ROTATED_PADS
+        )
         for path in files:
+            if path.stem in ROTATED_PADS:
+                with pytest.raises(UnsupportedPadRotation):
+                    parse_footprint(path.read_text())
+                continue
             courtyard = parse_footprint(path.read_text()).courtyard
             expected = Rectangle if path.stem in RECT_COURTYARDS else Circle
             assert isinstance(courtyard, expected), path.name
+
+
+class TestRotatedPadRaise:
+    """ADR-0022 — the one committed file the raise retires."""
+
+    def test_valve_socket_pads_off_the_90_multiple_raise(self):
+        text = (ECC83_FP_DIR / "Valve_ECC-83-2.kicad_mod").read_text()
+        with pytest.raises(UnsupportedPadRotation) as excinfo:
+            parse_footprint(text)
+        assert excinfo.value.entry_name == "Valve_ECC-83-2"
+        assert excinfo.value.pad_number == "1"
+        assert excinfo.value.angle == 306
 
 
 class TestExactRectangleValues:

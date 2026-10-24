@@ -1,7 +1,8 @@
 """The Board model — immutable snapshots and value objects (ADR-0001 … ADR-0004).
 
 ``Board`` is the sole root aggregate (ADR-0002): it owns the resolved
-components, placements, nets, outline, and stackup. Every dataclass is
+components, placements, nets, outline, stackup, and design rules
+(ADR-0020). Every dataclass is
 frozen; every mutation returns a new Board; collections are tuples so
 snapshots compare by exact equality — branch, backtrack, and diff without
 aliasing or float drift.
@@ -20,6 +21,7 @@ from outside by string refs ``"<kind>:<id>"`` (ADR-0004).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 from net2board.geometry import Point, Rectangle, Shape
 from net2board.model.constraints import (
@@ -37,6 +39,7 @@ from net2board.model.constraints import (
     UnknownConstraintId,
     UnknownConstraintRef,
     anchor_parts,
+    net_ref,
 )
 
 __all__ = [
@@ -45,6 +48,7 @@ __all__ = [
     "Constraint",
     "ConstraintError",
     "Criticality",
+    "DesignRules",
     "Edge",
     "EdgeMount",
     "Footprint",
@@ -66,12 +70,47 @@ ROTATIONS = (0, 90, 180, 270)
 
 
 @dataclass(frozen=True)
+class DesignRules:
+    """The board-wide copper rules the checker and the router must share
+    (ADR-0020): copper-to-copper clearance and copper-to-edge clearance,
+    integer nanometres, both ``> 0``.
+
+    Defaults are KiCad's fresh-project values (0.2 / 0.5 mm) so an
+    undeclared board is judged at our numbers unassisted — the DRC
+    clean-ness the M3 acceptance reads is judged under these. Per-net and
+    per-region overrides, trace widths, and check suppression are not on
+    it. The numbers ride the DSN handoff (``export_dsn`` reads them), so
+    router and checker price one number by construction.
+    """
+
+    clearance_nm: int = 200_000
+    edge_clearance_nm: int = 500_000
+
+    def __post_init__(self):
+        for name in ("clearance_nm", "edge_clearance_nm"):
+            if getattr(self, name) <= 0:
+                raise ValueError(
+                    f"DesignRules must be positive: {name} {getattr(self, name)!r} nm"
+                )
+
+
+@dataclass(frozen=True)
 class Pad:
     """A footprint's copper landing area, stored for export.
 
     ``shape_enum`` is the opaque KiCad pad-shape string, carried verbatim to
-    the exporter (ADR-0006); pad geometry and its world transform are
-    deferred until a milestone adds a pad-clearance check.
+    the exporter (ADR-0006); the copper outline itself is the
+    ``pad_world_outline`` capsule (ADR-0022), derived from the size — or,
+    for ``custom`` pads, from ``hull``, the importer's pad-local bounding
+    rectangle of the primitives (the anchor box alone under-covers the
+    real copper). ``local_rotation`` is the pad's rotation inside the
+    footprint frame as the library file states it, degrees, ``[0, 360)``,
+    restricted to the 90° multiples at load (ADR-0022) — the
+    ``.kicad_pcb`` writer composes it with the placement rotation into the
+    pad's world ``(at … rot)`` token (the #73 "the token is the placement
+    rotation alone" reading was the board-absolute demo fixture misread).
+    ``roundrect_rratio`` is the corner ratio as the library states it,
+    feeding the capsule's floored corner radius.
     """
 
     number: str
@@ -80,15 +119,30 @@ class Pad:
     drill: int | None
     layers: tuple[str, ...]
     shape_enum: str
+    local_rotation: int = 0
+    roundrect_rratio: Decimal | None = None
+    hull: Rectangle | None = None
 
 
 @dataclass(frozen=True)
 class Footprint:
-    """A part's landing pattern embedded in a Placement or Component."""
+    """A part's landing pattern embedded in a Placement or Component.
+
+    ``net_tie_groups`` is the footprint's net-tie pad groups as parsed
+    (each a frozenset of pad numbers); the pad checks exempt pairs sharing
+    a group (ADR-0022).
+    """
 
     entry_name: str
     pads: tuple[Pad, ...]
     courtyard: Shape | None
+    net_tie_groups: tuple[frozenset[str], ...] = ()
+
+    def pad(self, number: str) -> Pad | None:
+        """The pad with this number, or ``None`` — the one by-number
+        read: existence checks go through it, the error stays the
+        caller's to raise."""
+        return next((pad for pad in self.pads if pad.number == number), None)
 
 
 @dataclass(frozen=True)
@@ -155,7 +209,7 @@ class Board:
     indexes — ``_component_by_ref``, ``_placement_index``,
     ``_constraint_index``, ``_group_index``, and ``_net_index`` — so the
     mutations validate a ref, fetch a footprint, or find an existing
-    entry without scanning the board (ADR-0001 as amended by #29).
+    entry without iterating the board (ADR-0001 as amended by #29).
     They are excluded from ``repr`` and equality (snapshots compare by
     the payload alone). Every construction door is safe by construction:
     the public constructor (``Board(...)``, ``dataclasses.replace``
@@ -179,6 +233,7 @@ class Board:
     nets: tuple[Net, ...]
     outline: Rectangle
     stackup: tuple[str, ...]
+    design_rules: DesignRules = field(default_factory=DesignRules)
     constraints: tuple[Constraint, ...] = ()
     groups: tuple[Group, ...] = ()
     _component_by_ref: dict[str, Component] | None = field(
@@ -223,7 +278,7 @@ class Board:
     def placement(self, ref: str) -> Placement | None:
         """The ref's placement, or ``None`` when unplaced — an O(1) index
         read (ADR-0001 as amended by #29): consumers look a placement up,
-        they do not scan ``placements``."""
+        they do not iterate ``placements``."""
         at = self._placement_index.get(ref)
         return None if at is None else self.placements[at]
 
@@ -232,6 +287,22 @@ class Board:
         footprint lookup behind ``with_placement``, offered to every
         consumer (an unplaced ref still has its footprint here)."""
         return self._component_by_ref.get(ref)
+
+    def anchor_members(self, target: str) -> tuple[str, ...]:
+        """A relation's target expanded to placement refs (ADR-0011):
+        ``placement:<ref>`` is that ref alone, ``group:<id>`` the Group's
+        canonically sorted refs. ``with_constraint`` validated every anchor
+        against this Board, and an inconsistent construction raises
+        ``UnknownConstraintRef`` here rather than surfacing as a bare miss
+        downstream — the one expansion the checks, the hinges, and the
+        solver all read (#65)."""
+        kind, name = anchor_parts(target)
+        if kind == "placement":
+            return (name,)
+        for group in self.groups:
+            if group.id == name:
+                return group.refs
+        raise UnknownConstraintRef(target)
 
     def with_placement(
         self, ref: str, x: int, y: int, rotation: int, side: str, locked: bool = False
@@ -348,6 +419,7 @@ class Board:
             "nets": self.nets,
             "outline": self.outline,
             "stackup": self.stackup,
+            "design_rules": self.design_rules,
             "constraints": self.constraints,
             "groups": self.groups,
             "_component_by_ref": self._component_by_ref,
@@ -371,7 +443,7 @@ class Board:
         if component is None:
             raise UnknownConstraintRef(f"placement:{ref}")
         footprint = component.footprint
-        if all(pad.number != pad_number for pad in footprint.pads):
+        if footprint.pad(pad_number) is None:
             raise ConstraintError(
                 f"unknown pad {pad_number!r} on {ref!r}: footprint "
                 f"{footprint.entry_name!r} has pads "
@@ -397,7 +469,9 @@ class Board:
                 self._resolve_anchor(constraint.relation.target)
             case Criticality():
                 if constraint.relation.net not in self._net_index:
-                    raise UnknownConstraintRef(f"net:{constraint.relation.net}")
+                    raise UnknownConstraintRef(net_ref(constraint.relation.net))
+            case _:
+                raise ConstraintError(f"unknown relation {constraint.relation!r}")
 
     def unplaced_refs(self) -> tuple[str, ...]:
         """Netlist refs with no placement, in netlist order.

@@ -12,17 +12,27 @@ the model's ``Edge`` value string; geometry never imports the model
 (``world_point``'s duck-typing rule).
 """
 
+import random
 from types import SimpleNamespace
 
 import pytest
 
-from conftest import fresh_board, make_spec
+from conftest import RES_PADS, fresh_board, make_spec
 from net2board.build import build_board
+from net2board.drc import _edge_line_gap
 from net2board.geometry import (
+    Capsule,
     Circle,
+    Edge,
     Point,
     Rectangle,
+    _apart,
+    _boxes_clear,
+    _clear_of_outline,
+    _grown,
+    capsule_gap_nm,
     edge_face_offset_nm,
+    measure_box,
     pad_distance_nm,
     pad_world_bbox,
     region_shortfall_nm,
@@ -106,6 +116,49 @@ class TestPadWorldBbox:
             pad_world_bbox(board.placements[0])
 
 
+class TestMeasureBox:
+    """The box Region, EdgeMount, and KeepTogether measure (ADR-0011's
+    fallback, #42, #65): courtyard AABB first, pad bounding box when
+    courtyard-less, ``None`` when there is nothing to measure."""
+
+    def test_rectangle_courtyard_measures_as_its_world_aabb(self):
+        # RES courtyard (−1.05M, −1.5M)..(8.67M, 1.5M) at the anchor
+        assert measure_box(placed("R1")) == rect(
+            8_950_000, 18_500_000, 18_670_000, 21_500_000
+        )
+
+    def test_circle_courtyard_resolves_through_the_isqrt_aabb(self):
+        # BIGRES: radius² = 10¹³, isqrt = 3 162 277, world center (15M, 20M)
+        assert measure_box(placed("R3")) == rect(
+            11_837_723, 16_837_723, 18_162_277, 23_162_277
+        )
+
+    def test_courtyard_less_footprint_falls_back_to_the_pad_bbox(self):
+        # RES pads without a courtyard: the pads bound the box (no courtyard read)
+        spec = make_spec(
+            netlist_ir=NetlistIR(comps=(CompIR(ref="R1", entry_name="RES"),), nets=()),
+            footprint_irs={
+                "RES": FootprintIR(entry_name="RES", pads=RES_PADS, courtyard=None)
+            },
+        )
+        board = build_board(spec).with_placement("R1", *ANCHOR, 0, "F.Cu")
+        assert measure_box(board.placements[0]) == rect(
+            8_550_000, 19_200_000, 18_420_000, 22_450_000
+        )
+
+    def test_no_courtyard_and_no_pads_is_nothing_to_measure(self):
+        spec = make_spec(
+            netlist_ir=NetlistIR(
+                comps=(CompIR(ref="X1", entry_name="NOPAD"),), nets=()
+            ),
+            footprint_irs={
+                "NOPAD": FootprintIR(entry_name="NOPAD", pads=(), courtyard=None)
+            },
+        )
+        board = build_board(spec).with_placement("X1", 0, 0, 0, "F.Cu")
+        assert measure_box(board.placements[0]) is None
+
+
 class TestPadDistanceNm:
     def test_pad_centers_measure_horizontally(self):
         # R1 pad 1 sits on the anchor; R2 pad 2 is 7.62 mm right of R2's anchor
@@ -147,28 +200,33 @@ class TestPadDistanceNm:
 class TestEdgeFaceOffset:
     def test_inside_offsets_are_negative(self):
         box = rect(1_000_000, 1_000_000, 2_000_000, 2_000_000)
-        assert edge_face_offset_nm(box, OUTLINE, "left") == -1_000_000
-        assert edge_face_offset_nm(box, OUTLINE, "right") == -38_000_000
-        assert edge_face_offset_nm(box, OUTLINE, "top") == -1_000_000
-        assert edge_face_offset_nm(box, OUTLINE, "bottom") == -28_000_000
+        assert edge_face_offset_nm(box, OUTLINE, Edge.LEFT) == -1_000_000
+        assert edge_face_offset_nm(box, OUTLINE, Edge.RIGHT) == -38_000_000
+        assert edge_face_offset_nm(box, OUTLINE, Edge.TOP) == -1_000_000
+        assert edge_face_offset_nm(box, OUTLINE, Edge.BOTTOM) == -28_000_000
 
     def test_flush_is_zero(self):
-        assert edge_face_offset_nm(rect(0, 1, 2, 3), OUTLINE, "left") == 0
-        assert edge_face_offset_nm(rect(2, 1, 40_000_000, 3), OUTLINE, "right") == 0
-        assert edge_face_offset_nm(rect(1, 0, 3, 2), OUTLINE, "top") == 0
-        assert edge_face_offset_nm(rect(1, 2, 3, 30_000_000), OUTLINE, "bottom") == 0
+        assert edge_face_offset_nm(rect(0, 1, 2, 3), OUTLINE, Edge.LEFT) == 0
+        assert edge_face_offset_nm(rect(2, 1, 40_000_000, 3), OUTLINE, Edge.RIGHT) == 0
+        assert edge_face_offset_nm(rect(1, 0, 3, 2), OUTLINE, Edge.TOP) == 0
+        assert edge_face_offset_nm(rect(1, 2, 3, 30_000_000), OUTLINE, Edge.BOTTOM) == 0
 
     def test_past_offsets_are_positive(self):
-        assert edge_face_offset_nm(rect(-500_000, 1, 2, 3), OUTLINE, "left") == 500_000
         assert (
-            edge_face_offset_nm(rect(1, 2, 40_750_000, 3), OUTLINE, "right") == 750_000
+            edge_face_offset_nm(rect(-500_000, 1, 2, 3), OUTLINE, Edge.LEFT) == 500_000
+        )
+        assert (
+            edge_face_offset_nm(rect(1, 2, 40_750_000, 3), OUTLINE, Edge.RIGHT)
+            == 750_000
         )
         # y-down: TOP is the minimum-y edge
         assert (
-            edge_face_offset_nm(rect(1, -2_000_000, 3, 4), OUTLINE, "top") == 2_000_000
+            edge_face_offset_nm(rect(1, -2_000_000, 3, 4), OUTLINE, Edge.TOP)
+            == 2_000_000
         )
         assert (
-            edge_face_offset_nm(rect(1, 2, 3, 30_050_000), OUTLINE, "bottom") == 50_000
+            edge_face_offset_nm(rect(1, 2, 3, 30_050_000), OUTLINE, Edge.BOTTOM)
+            == 50_000
         )
 
     def test_unknown_edge_raises_value_error(self):
@@ -226,3 +284,100 @@ class TestWorldPoint:
         placement = SimpleNamespace(pos=Point(100, 200), rotation=45, side="F.Cu")
         with pytest.raises(ValueError, match="invalid rotation 45"):
             world_point(Point(10, 20), placement)
+
+
+def _capsule_in_box(rng):
+    """A capsule together with the copper box that contains it — the
+    relationship the pre-filters lean on (``_anchored_copper``'s box is
+    the union of its capsules' ``core ± radius`` extents)."""
+    x, y = rng.randrange(0, 500_000), rng.randrange(0, 500_000)
+    hw, hh = rng.randrange(0, 50_000), rng.randrange(0, 50_000)
+    radius = rng.choice((0, 1_000, 12_345, 100_000))
+    core = rect(x - hw, y - hh, x + hw, y + hh)
+    capsule = Capsule(core=core, radius=radius)
+    box = rect(
+        core.min.x - radius,
+        core.min.y - radius,
+        core.max.x + radius,
+        core.max.y + radius,
+    )
+    return capsule, box
+
+
+class TestGrownApart:
+    """``_apart`` over ``_grown`` boxes never hides a violating pair:
+    axis-separated grown boxes force every contained capsule pair's gap
+    past the rule — the Evaluator's slot-granularity pre-filter."""
+
+    def test_apart_grown_boxes_mean_no_pair_below_the_rule(self):
+        rng = random.Random(20261018)
+        checked = 0
+        for _ in range(4000):
+            cl = rng.choice((5_000, 200_000, 1_000_000))
+            capsule_a, box_a = _capsule_in_box(rng)
+            capsule_b, box_b = _capsule_in_box(rng)
+            if _apart(_grown(box_a, cl), _grown(box_b, cl)):
+                assert capsule_gap_nm(capsule_a, capsule_b) >= cl
+                checked += 1
+        assert checked > 100  # the property was exercised, not vacuous
+
+
+class TestBoxesClear:
+    """``_boxes_clear`` never hides a violating pair: origin boxes
+    anchored at their placements, strictly apart by the rule, force every
+    contained capsule pair's gap past the rule — the full pass's
+    slot-granularity pre-filter."""
+
+    def test_clear_origin_boxes_mean_no_pair_below_the_rule(self):
+        rng = random.Random(103)
+        checked = 0
+        for _ in range(4000):
+            cl = rng.choice((5_000, 200_000, 1_000_000))
+            capsule_a, box_a = _capsule_in_box(rng)
+            capsule_b, box_b = _capsule_in_box(rng)
+            dx, dy = (
+                rng.randrange(-1_000_000, 1_000_000),
+                rng.randrange(-1_000_000, 1_000_000),
+            )
+            if _boxes_clear(box_a, Point(0, 0), box_b, Point(dx, dy), cl):
+                world_b = Capsule(
+                    core=rect(
+                        capsule_b.core.min.x + dx,
+                        capsule_b.core.min.y + dy,
+                        capsule_b.core.max.x + dx,
+                        capsule_b.core.max.y + dy,
+                    ),
+                    radius=capsule_b.radius,
+                )
+                assert capsule_gap_nm(capsule_a, world_b) >= cl
+                checked += 1
+        assert checked > 100
+
+
+class TestClearOfOutline:
+    """``_clear_of_outline`` never hides an edge finding: a box at least
+    the rule inside every outline line forces every contained capsule's
+    signed edge gap past the rule — the edge checks' shared pre-filter
+    (#98), priced through drc's own ``_edge_line_gap``."""
+
+    def test_box_inside_by_the_rule_means_no_capsule_edge_violation(self):
+        rng = random.Random(20261018)
+        checked = 0
+        for _ in range(4000):
+            rule = rng.choice((200_000, 500_000))
+            inset = rng.randrange(0, 400_000)
+            box = rect(inset, inset, OUTLINE.max.x - inset, OUTLINE.max.y - inset)
+            if not _clear_of_outline(box, OUTLINE, rule):
+                continue
+            capsule, copper_box = _capsule_in_box(rng)
+            if not (
+                copper_box.min.x >= box.min.x
+                and copper_box.max.x <= box.max.x
+                and copper_box.min.y >= box.min.y
+                and copper_box.max.y <= box.max.y
+            ):
+                continue
+            for edge in Edge:
+                assert _edge_line_gap(capsule, OUTLINE, edge) >= rule
+            checked += 1
+        assert checked > 100

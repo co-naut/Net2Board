@@ -779,7 +779,6 @@ class TestKeepTogetherUnmet:
         )
 
 
-import net2board.drc as drc_module
 from net2board.drc import CHECKS, COMPANIONS
 
 
@@ -787,23 +786,29 @@ def refiltered(check_output, ref):
     return tuple(v for v in check_output if f"placement:{ref}" in v.offending_refs)
 
 
+def check_reporting(board, violation_type):
+    """The registered check that reports this ViolationType on this board
+    — checks obtained through the CHECKS registry, never by private name.
+    Resolution reads the check's findings, so the board must be one the
+    type fires on; resolve on a firing board, then reuse the check."""
+    return next(
+        check for check in CHECKS if any(v.type is violation_type for v in check(board))
+    )
+
+
 class TestLocalityCompanions:
     """Each constraint check declares its locality companion (ADR-0016):
     ``companion(board, ref)`` returns exactly the findings of the full
-    check whose ``offending_refs`` contain the moved ref (CONTEXT.md's
+    check whose ``offending_refs`` contain the moved ref (GLOSSARY.md's
     Locality axiom) — here, for a single moved placement."""
 
     def test_every_check_with_a_local_companion_declares_one(self):
-        # containment (ADR-0018) plus the four constraint checks; the
-        # all-pairs overlap check has no companion — slower, never wrong
+        # containment (ADR-0018), the four constraint checks, and #91's
+        # three copper checks; the all-pairs overlap check has no
+        # companion — slower, never wrong
         declaring = {check for check in CHECKS if check in COMPANIONS}
-        assert declaring == {
-            drc_module._courtyard_outside_outline,
-            drc_module._proximity_unmet,
-            drc_module._region_unmet,
-            drc_module._edge_mount_unmet,
-            drc_module._keep_together_unmet,
-        }
+        assert set(COMPANIONS) == declaring
+        assert len(declaring) == len(CHECKS) - 1
 
     def test_proximity_companion_recomputes_its_own_pair(self):
         board = (
@@ -812,7 +817,7 @@ class TestLocalityCompanions:
             .with_constraint(proximity(bound=1, id="tight"))
             .with_constraint(proximity(ref_a="R2", ref_b="R1", bound=1, id="back"))
         )
-        check = drc_module._proximity_unmet
+        check = check_reporting(board, ViolationType.PROXIMITY_UNMET)
         companion = COMPANIONS[check]
         assert check(board) != ()
         # both constraints name both refs: either ref's companion is the
@@ -825,13 +830,19 @@ class TestLocalityCompanions:
     def test_proximity_companion_clears_after_the_move(self):
         # bound 7_620_002 is unmet at 7_620_000; moving R2 one nm closer
         # satisfies it — R2's companion empties with the full check
+        # (the check resolves on a firing board — the moved one is silent)
+        check = check_reporting(
+            decoupled_board()
+            .without_constraint("cap-near")
+            .with_constraint(proximity(bound=1, id="tight")),
+            ViolationType.PROXIMITY_UNMET,
+        )
         moved = (
             decoupled_board()
             .without_constraint("cap-near")
             .with_constraint(proximity(bound=7_620_002, id="tight"))
             .with_placement("R2", X + 7_620_001, Y, 0, "F.Cu")
         )
-        check = drc_module._proximity_unmet
         assert check(moved) == ()
         assert COMPANIONS[check](moved, "R2") == ()
 
@@ -842,7 +853,7 @@ class TestLocalityCompanions:
             .with_placement("R1", 4_000_000, 15_000_000, 0, "F.Cu")
             .with_constraint(region(target="group:pair", id="gather"))
         )
-        check = drc_module._region_unmet
+        check = check_reporting(board, ViolationType.REGION_UNMET)
         companion = COMPANIONS[check]
         assert check(board) != ()
         assert companion(board, "R1") == refiltered(check(board), "R1")
@@ -851,8 +862,15 @@ class TestLocalityCompanions:
 
     def test_region_companion_flips_with_a_single_moved_placement(self):
         # moving R1 inside empties R1's finding; R2's is untouched
+        # (the check resolves on the firing board — the moved one alone
+        # states no region constraint)
+        check = check_reporting(
+            placed_region_board().with_constraint(
+                region(target="group:pair", id="gather")
+            ),
+            ViolationType.REGION_UNMET,
+        )
         moved = placed_region_board()
-        check = drc_module._region_unmet
         companion = COMPANIONS[check]
         assert companion(moved, "R1") == ()
         assert companion(moved, "R2") == refiltered(check(moved), "R2")
@@ -865,7 +883,7 @@ class TestLocalityCompanions:
             .with_placement("R1", 0, 15_000_000, 0, "F.Cu")  # flush-ish: in band
             .with_placement("R2", 10_000_000, 15_000_000, 0, "F.Cu")  # interior
         )
-        check = drc_module._edge_mount_unmet
+        check = check_reporting(board, ViolationType.EDGE_MOUNT_UNMET)
         companion = COMPANIONS[check]
         assert check(board) != ()
         assert companion(board, "R1") == ()
@@ -878,7 +896,7 @@ class TestLocalityCompanions:
             .without_constraint("cluster")
             .with_constraint(keep_together(width=5_999_999, height=1_000_000))
         )
-        check = drc_module._keep_together_unmet
+        check = check_reporting(board, ViolationType.KEEP_TOGETHER_UNMET)
         companion = COMPANIONS[check]
         (finding,) = check(board)
         # the extent is collective: both members' companions name it
@@ -903,13 +921,13 @@ class TestLocalityCompanions:
             .with_placement("R1", 0, 15_000_000, 0, "F.Cu")
             .with_placement("R2", 3_000_000, 15_000_000, 0, "F.Cu")
         )
-        checks = (
-            drc_module._proximity_unmet,
-            drc_module._region_unmet,
-            drc_module._edge_mount_unmet,
-            drc_module._keep_together_unmet,
-        )
-        for check in checks:
+        for type_ in (
+            ViolationType.PROXIMITY_UNMET,
+            ViolationType.REGION_UNMET,
+            ViolationType.EDGE_MOUNT_UNMET,
+            ViolationType.KEEP_TOGETHER_UNMET,
+        ):
+            check = check_reporting(board, type_)
             full = check(board)
             assert full != ()
             for ref in ("R1", "R2"):

@@ -2,7 +2,9 @@
 
 ``uv run python -m net2board.examples.ecc83 [output.kicad_pcb]`` loads
 the committed ecc83 fixture, walks the detect-and-fix beat to its clean
-single-move fix, and writes the export. The default output lands beside
+single-move fix, and writes the export. The beat reports the overlap it
+places into plus the coincident-pad shorts the copper checks price
+(#91); the move clears all of them. The default output lands beside
 the fixture (a gitignored path); pass a path to write elsewhere. Exit
 code 0 means the acceptance pipeline held.
 """
@@ -14,7 +16,7 @@ from pathlib import Path
 
 from net2board.boardspec import BoardSpec
 from net2board.build import build_board
-from net2board.drc import run_drc
+from net2board.drc import ViolationType, run_drc
 from net2board.examples.ecc83_placements import (
     BEAT_OVERLAP_ROW,
     PLACEMENTS,
@@ -51,15 +53,34 @@ def main(argv: list[str] | None = None) -> int:
 
     overlapped = beat_overlap_board(board)
     violations = run_drc(overlapped)
-    if overlapped.unplaced_refs() or len(violations) != 1:
+    overlaps = [
+        violation
+        for violation in violations
+        if violation.type is ViolationType.COURTYARDS_OVERLAP
+    ]
+    shorts = [
+        violation
+        for violation in violations
+        if violation.type is ViolationType.SHORTING_ITEMS
+    ]
+    if (
+        overlapped.unplaced_refs()
+        # the overlap plus the coincident-pad shorts the copper checks
+        # price since #91 — R1's and R2's plates land on each other:
+        # one courtyard overlap + two pad shorts, and nothing else
+        or len(overlaps) != 1
+        or len(shorts) != 2
+        or len(violations) != 3
+    ):
         print(
-            "detect-and-fix beat failed: expected all placed, exactly 1 violation",
+            "detect-and-fix beat failed: expected all placed, one overlap and "
+            "the coincident-pad shorts",
             file=sys.stderr,
         )
         return 1
     print(
-        f"beat: {violations[0].offending_refs[1]} placed onto "
-        f"{violations[0].offending_refs[0]} -> {len(violations)} violation"
+        f"beat: {overlaps[0].offending_refs[1]} placed onto "
+        f"{overlaps[0].offending_refs[0]} -> {len(violations)} violations"
     )
     for violation in violations:
         print(f"      {violation.description}")

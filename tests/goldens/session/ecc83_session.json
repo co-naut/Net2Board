@@ -3,6 +3,7 @@
   "steps": [
     {
       "budget": 1600,
+      "candidates_evaluated": 1600,
       "legalize_delta_nm": 0,
       "name": "undercut",
       "objective_terms": [
@@ -118,6 +119,7 @@
     },
     {
       "budget": 20000,
+      "candidates_evaluated": 2362,
       "legalize_delta_nm": 0,
       "name": "improve",
       "objective_terms": [
@@ -233,6 +235,7 @@
     },
     {
       "budget": 20000,
+      "candidates_evaluated": 1181,
       "legalize_delta_nm": 0,
       "name": "criticality",
       "objective_terms": [
@@ -348,6 +351,7 @@
     },
     {
       "budget": 20000,
+      "candidates_evaluated": 1181,
       "legalize_delta_nm": 0,
       "name": "relations",
       "objective_terms": [
@@ -463,6 +467,7 @@
     },
     {
       "budget": 20000,
+      "candidates_evaluated": 32,
       "legalize_delta_nm": 0,
       "name": "unsat",
       "objective_terms": [
@@ -484,11 +489,11 @@
         },
         {
           "kind": "net_span",
-          "raw_nm": 51900000,
+          "raw_nm": 52201000,
           "ref": "net:Net-(P2-P1)",
           "status": "active",
           "weight": 1,
-          "weighted_nm": 51900000
+          "weighted_nm": 52201000
         },
         {
           "kind": "net_span",
@@ -571,7 +576,7 @@
           "weighted_nm": 0
         }
       ],
-      "objective_total_nm": 335740000,
+      "objective_total_nm": 336041000,
       "refs": [
         "P7"
       ],
@@ -582,6 +587,7 @@
     },
     {
       "budget": 20000,
+      "candidates_evaluated": 32,
       "legalize_delta_nm": 0,
       "name": "relaxed",
       "objective_terms": [
@@ -603,11 +609,11 @@
         },
         {
           "kind": "net_span",
-          "raw_nm": 51900000,
+          "raw_nm": 52201000,
           "ref": "net:Net-(P2-P1)",
           "status": "active",
           "weight": 1,
-          "weighted_nm": 51900000
+          "weighted_nm": 52201000
         },
         {
           "kind": "net_span",
@@ -690,10 +696,126 @@
           "weighted_nm": 0
         }
       ],
-      "objective_total_nm": 335740000,
+      "objective_total_nm": 336041000,
       "refs": [
         "P7"
       ],
+      "stop_reason": "no_further_improvement",
+      "unmet_constraint_ids": []
+    },
+    {
+      "budget": 20000,
+      "candidates_evaluated": 6628,
+      "legalize_delta_nm": 0,
+      "name": "rotation",
+      "objective_terms": [
+        {
+          "kind": "net_span",
+          "raw_nm": 63500000,
+          "ref": "net:GND",
+          "status": "active",
+          "weight": 0,
+          "weighted_nm": 0
+        },
+        {
+          "kind": "net_span",
+          "raw_nm": 35970000,
+          "ref": "net:Net-(P1-PM)",
+          "status": "active",
+          "weight": 1,
+          "weighted_nm": 35970000
+        },
+        {
+          "kind": "net_span",
+          "raw_nm": 51701000,
+          "ref": "net:Net-(P2-P1)",
+          "status": "active",
+          "weight": 1,
+          "weighted_nm": 51701000
+        },
+        {
+          "kind": "net_span",
+          "raw_nm": 25750000,
+          "ref": "net:Net-(P3-P1)",
+          "status": "active",
+          "weight": 1,
+          "weighted_nm": 25750000
+        },
+        {
+          "kind": "net_span",
+          "raw_nm": 26160000,
+          "ref": "net:Net-(P4-P1)",
+          "status": "active",
+          "weight": 1,
+          "weighted_nm": 26160000
+        },
+        {
+          "kind": "net_span",
+          "raw_nm": 38350000,
+          "ref": "net:Net-(P4-PM)",
+          "status": "active",
+          "weight": 1,
+          "weighted_nm": 38350000
+        },
+        {
+          "kind": "net_span",
+          "raw_nm": 26730000,
+          "ref": "net:Net-(U1A-G)",
+          "status": "active",
+          "weight": 4,
+          "weighted_nm": 106920000
+        },
+        {
+          "kind": "net_span",
+          "raw_nm": 31810000,
+          "ref": "net:Net-(U1A-K)",
+          "status": "active",
+          "weight": 1,
+          "weighted_nm": 31810000
+        },
+        {
+          "kind": "net_span",
+          "raw_nm": 18880000,
+          "ref": "net:Net-(U1B-K)",
+          "status": "active",
+          "weight": 1,
+          "weighted_nm": 18880000
+        },
+        {
+          "kind": "net_span",
+          "raw_nm": 0,
+          "ref": "net:unconnected-(P5-Pad1)",
+          "status": "active",
+          "weight": 1,
+          "weighted_nm": 0
+        },
+        {
+          "kind": "net_span",
+          "raw_nm": 0,
+          "ref": "net:unconnected-(P6-Pad1)",
+          "status": "active",
+          "weight": 1,
+          "weighted_nm": 0
+        },
+        {
+          "kind": "net_span",
+          "raw_nm": 0,
+          "ref": "net:unconnected-(P7-Pad1)",
+          "status": "active",
+          "weight": 1,
+          "weighted_nm": 0
+        },
+        {
+          "kind": "net_span",
+          "raw_nm": 0,
+          "ref": "net:unconnected-(P8-Pad1)",
+          "status": "active",
+          "weight": 1,
+          "weighted_nm": 0
+        }
+      ],
+      "objective_total_nm": 335541000,
+      "refs": null,
       "stop_reason": "no_further_improvement",
       "unmet_constraint_ids": []
     }

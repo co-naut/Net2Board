@@ -22,18 +22,22 @@ import sys
 
 import pytest
 
-from conftest import assert_byte_golden, assert_golden
+from conftest import assert_byte_golden, assert_golden, load_ecc83_spec
+from net2board.build import build_board
 from net2board.drc import Severity, ViolationType, run_drc
-from net2board.examples.session import (
+from net2board.examples.ecc83_placements import apply_placements
+from net2board.export import export_pcb
+from net2board.geometry import pad_world_center, shape_aabb, world_courtyard
+from net2board.harness.session import (
     BUDGET_MAIN,
     BUDGET_UNDERCUT,
     SessionRecord,
     SessionStep,
     run_session,
 )
-from net2board.geometry import pad_world_center, shape_aabb, world_courtyard
-from net2board.model import Edge, EdgeMount, KeepTogether, Proximity, Region
-from net2board.solver import StopReason
+from net2board.model import ROTATIONS, Edge, EdgeMount, KeepTogether, Proximity, Region
+from net2board.objective import evaluate
+from net2board.solver import StopReason, solve
 
 REGEN_HINT = "regenerate deliberately: UPDATE_GOLDENS=1 uv run pytest tests/test_session_ecc83.py"
 
@@ -57,6 +61,7 @@ def record_json(record: SessionRecord) -> dict:
                 "budget": step.budget,
                 "refs": list(step.refs) if step.refs is not None else None,
                 "stop_reason": step.stop_reason,
+                "candidates_evaluated": step.candidates_evaluated,
                 "unmet_constraint_ids": list(step.unmet_constraint_ids),
                 "legalize_delta_nm": step.legalize_delta_nm,
                 "objective_total_nm": step.objective.total_nm,
@@ -77,6 +82,13 @@ def error_findings(board):
     return tuple(v for v in run_drc(board) if v.severity is Severity.ERROR)
 
 
+def rotations_by_ref(board):
+    """The board's rotations by ref — the shape both rotation readings
+    diff (the knob's bite in the replay face, turn-optimality in the
+    beat face)."""
+    return {p.ref: p.rotation for p in board.placements}
+
+
 class TestReplay:
     def test_two_runs_are_identical_down_to_the_export_bytes(self):
         first = run_session()
@@ -84,8 +96,7 @@ class TestReplay:
         assert first == second
         assert first.export == second.export
 
-    def test_the_lineage_walks_six_solve_steps(self):
-        record = run_session()
+    def test_the_lineage_walks_seven_solve_steps(self, record):
         assert [step.name for step in record.steps] == [
             "undercut",
             "improve",
@@ -93,7 +104,73 @@ class TestReplay:
             "relations",
             "unsat",
             "relaxed",
+            "rotation",
         ]
+
+
+class TestKnobOnReplay:
+    """The knob-on replay (ADR-0021's falsification): a ``free_rotation``
+    solve over the ecc83 baseline replays byte-identically — same
+    ``(board, refs, budget, knob)``, same bytes. No golden is pinned
+    here: the knob-on candidate reading is #85's pre-registered run;
+    what this pins is determinism, plus the bite — the knob-on search
+    actually re-poses parts the knob-off search leaves standing, and
+    (measured 2026-10-25, #115) demonstrably *turns* one: U1, from 0 to
+    270 degrees."""
+
+    @staticmethod
+    def _baseline():
+        return apply_placements(build_board(load_ecc83_spec()))
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def knob_on_runs(cls):
+        """Two independent knob-on solves, each from a freshly built
+        baseline — the replay pair, shared with the bite tests."""
+        runs = []
+        for _ in range(2):
+            result = solve(cls._baseline(), budget=BUDGET_MAIN, free_rotation=True)
+            assert result.stop_reason is StopReason.NO_FURTHER_IMPROVEMENT
+            for placement in result.board.placements:
+                assert placement.rotation in (0, 90, 180, 270)
+            runs.append(result)
+        return runs
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def knob_off_run(cls):
+        """The knob-off solve from the same baseline — the comparison
+        the bite tests read."""
+        return solve(cls._baseline(), budget=BUDGET_MAIN)
+
+    def test_two_knob_on_runs_are_byte_identical(self, knob_on_runs):
+        first, second = knob_on_runs
+        assert export_pcb(first.board) == export_pcb(second.board)
+
+    def test_the_knob_actually_reposes_the_baseline(self, knob_on_runs, knob_off_run):
+        knob_on = knob_on_runs[0]
+        refs = {p.ref for p in knob_on.board.placements} | {
+            p.ref for p in knob_off_run.board.placements
+        }
+        moved = [
+            ref
+            for ref in sorted(refs)
+            if knob_on.board.placement(ref) != knob_off_run.board.placement(ref)
+        ]
+        assert moved, "the knob changed nothing — the replay proves nothing"
+        assert evaluate(knob_on.board).total_nm <= evaluate(knob_off_run.board).total_nm
+
+    def test_the_knob_actually_turns_a_part(self, knob_on_runs, knob_off_run):
+        """The rotation bite, pinned as measured (#115): from the
+        baseline the knob-on search turns U1 to 270 degrees — a rotation
+        no knob-off candidate may carry. A different turn here is a
+        re-pin: name the new reading and the date."""
+        turned = {
+            ref: rotation
+            for ref, rotation in rotations_by_ref(knob_on_runs[0].board).items()
+            if rotation != rotations_by_ref(knob_off_run.board)[ref]
+        }
+        assert turned == {"U1": 270}
 
 
 class TestBudgetBeat:
@@ -106,8 +183,18 @@ class TestBudgetBeat:
         improve = by_name(record, "improve")
         assert undercut.stop_reason is StopReason.BUDGET_EXHAUSTED
         assert undercut.budget == BUDGET_UNDERCUT
+        # exhausted == candidates were cut mid-scan (#107), so the spend
+        # reads the budget exactly — the seam's own count (#102)
+        assert undercut.candidates_evaluated == BUDGET_UNDERCUT
         assert record.baseline_nm > undercut.objective.total_nm
         assert undercut.objective.total_nm > improve.objective.total_nm
+
+    def test_every_step_records_its_spend(self, record):
+        """The count rides the step (#102): each step's replay record
+        carries the Candidates its solve evaluated — never more than the
+        step's pinned budget, never zero (every step has real work)."""
+        for step in record.steps:
+            assert 0 < step.candidates_evaluated <= step.budget
 
     def test_the_retry_completes_past_the_baseline(self, record):
         improve = by_name(record, "improve")
@@ -200,7 +287,20 @@ class TestUnsatBeat:
     def test_the_board_survives_unsolved(self, record):
         relations = by_name(record, "relations").board
         unsat = by_name(record, "unsat").board
-        assert unsat.placements == relations.placements
+        # the contradiction moves nothing — P7's own Pose is untouched —
+        # and the one mover is solve's finalize legalize repairing a pad
+        # finding the relations board carried (P2 nudged out of clearance,
+        # #91's copper vocabulary): the board survives, more legal, with
+        # the contradiction still named
+        relations_by_ref = {p.ref: p for p in relations.placements}
+        unsat_by_ref = {p.ref: p for p in unsat.placements}
+        assert unsat_by_ref["P7"] == relations_by_ref["P7"]
+        moved = {
+            ref
+            for ref, placement in unsat_by_ref.items()
+            if placement != relations_by_ref[ref]
+        }
+        assert moved == {"P2"}
 
     def test_the_relaxing_step_comes_back_clean(self, record):
         step = by_name(record, "relaxed")
@@ -208,6 +308,50 @@ class TestUnsatBeat:
         assert step.unmet_constraint_ids == ()
         assert error_findings(step.board) == ()
         assert "region-bad" not in {c.id for c in step.board.constraints}
+
+
+class TestRotationBeat:
+    """The free_rotation beat (ADR-0024's goldens clause): one knob-on
+    step closes the session — rotation enters as a beat, never a headline
+    change — and its board is the export the GUI sign-off reads (item 5).
+    Pinned as measured 2026-10-25 (#115): from the searched optimum the
+    knob-on walk changes no rotation — it certifies the board
+    turn-optimal — and still improves the objective by a re-ordered
+    walk's position find; the face's rotated part is R3, at the committed
+    table's own 90 degrees. The turning bite lives in the replay face
+    (``TestKnobOnReplay``). The exact candidate and objective readings
+    are the record JSON's to pin."""
+
+    def test_the_beat_stops_converged(self, record):
+        step = by_name(record, "rotation")
+        assert step.stop_reason is StopReason.NO_FURTHER_IMPROVEMENT
+        assert step.unmet_constraint_ids == ()
+
+    def test_the_beat_certifies_turn_optimality(self, record):
+        """The knob turned nothing: every rotation on the beat board is
+        the relaxed board's own. An entry here is a re-pin — name the
+        turn, the reading, and the date."""
+        relaxed = by_name(record, "relaxed")
+        rotation = by_name(record, "rotation")
+        before = {p.ref: p.rotation for p in relaxed.board.placements}
+        after = {p.ref: p.rotation for p in rotation.board.placements}
+        assert after == before, "the knob turned something — re-pin the reading"
+
+    def test_the_beat_face_carries_a_rotated_part(self, record):
+        """Sign-off item 5's subject exists: at least one part on the
+        exported beat board sits at a non-zero rotation."""
+        step = by_name(record, "rotation")
+        turned_refs = [ref for ref, r in rotations_by_ref(step.board).items() if r != 0]
+        assert turned_refs, "no rotated part on the beat face — item 5 is blind"
+
+    def test_the_beat_never_regresses_the_objective(self, record):
+        rotation = by_name(record, "rotation")
+        relaxed = by_name(record, "relaxed")
+        assert rotation.objective.total_nm <= relaxed.objective.total_nm
+
+    def test_rotations_stay_in_the_model_set(self, record):
+        step = by_name(record, "rotation")
+        assert {p.rotation for p in step.board.placements} <= set(ROTATIONS)
 
 
 def protrusions(board):

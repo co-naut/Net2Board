@@ -13,7 +13,7 @@ correctness: ``run_drc`` (oracle cross-checked) owns *correct*, this owns
 Terms come from the ordered ``TERMS`` registry — a later term (congestion,
 say) is one append:
 
-- **NET_SPAN** — the numeraire (CONTEXT.md's NetSpan): width + height of
+- **NET_SPAN** — the numeraire (GLOSSARY.md's NetSpan): width + height of
   the AABB of a net's *placed pad centers*, integer nm, pad centers via
   ``pad_world_center`` so rotation and the back-side mirror compose exactly
   as everywhere else. One term per net, always: degree ≤ 1 measures 0 but
@@ -59,20 +59,18 @@ same board, same tuple, immune to netlist and statement order. The word
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 
 from net2board.geometry import (
     Rectangle,
     edge_face_offset_nm,
+    measure_box,
     pad_distance_nm,
-    pad_world_bbox,
     pad_world_center,
     region_shortfall_nm,
-    shape_aabb,
     union_bbox,
-    world_courtyard,
 )
 from net2board.model import (
     Board,
@@ -83,9 +81,8 @@ from net2board.model import (
     Preference,
     Proximity,
     Region,
-    UnknownConstraintRef,
 )
-from net2board.model.constraints import anchor_parts
+from net2board.model.constraints import constraint_ref, net_ref
 
 __all__ = [
     "TERMS",
@@ -93,7 +90,9 @@ __all__ = [
     "ObjectiveTerm",
     "TermKind",
     "TermStatus",
+    "criticality_weights",
     "evaluate",
+    "hinge",
 ]
 
 
@@ -165,11 +164,13 @@ def evaluate(board: Board) -> Objective:
     return Objective(total_nm=sum(term.weighted_nm for term in terms), terms=terms)
 
 
-def _criticality_weights(board: Board) -> dict[str, int]:
+def criticality_weights(board: Board) -> dict[str, int]:
     """Per net, the Criticality weight scaling its span (default 1).
 
     Two constraints naming one net resolve last-stated-wins — the
-    upsert-by-id mental model, deterministic in stated order.
+    upsert-by-id mental model, deterministic in stated order. Declared
+    reuse face (ADR-0016, #66): the Evaluator reads this same map so
+    incremental==full holds by construction.
     """
     weights: dict[str, int] = {}
     for constraint in board.constraints:
@@ -179,7 +180,7 @@ def _criticality_weights(board: Board) -> dict[str, int]:
 
 
 def _net_span_terms(
-    board: Board, placements: dict[str, Placement]
+    board: Board, placements: Mapping[str, Placement]
 ) -> list[ObjectiveTerm]:
     """One NET_SPAN term per net, in netlist order (canonicalized later).
 
@@ -187,7 +188,7 @@ def _net_span_terms(
     the net PARTIAL over its placed subset. Degree ≤ 1 measures 0 but still
     reports — 4 of 13 ecc83 nets are single-pin (ADR-0014).
     """
-    weights = _criticality_weights(board)
+    weights = criticality_weights(board)
     terms = []
     for net in board.nets:
         centers = []
@@ -208,7 +209,7 @@ def _net_span_terms(
         terms.append(
             ObjectiveTerm(
                 kind=TermKind.NET_SPAN,
-                ref=f"net:{net.name}",
+                ref=net_ref(net.name),
                 weight=weight,
                 raw_nm=span,
                 weighted_nm=weight * span,
@@ -218,7 +219,9 @@ def _net_span_terms(
     return terms
 
 
-def _hinge_terms(board: Board, placements: dict[str, Placement]) -> list[ObjectiveTerm]:
+def _hinge_terms(
+    board: Board, placements: Mapping[str, Placement]
+) -> list[ObjectiveTerm]:
     """One PREFERENCE term per non-Criticality Preference constraint, in
     stated order (canonicalized later). Requirements never reach the
     objective (they are run_drc's alone); Criticality scales, never hinges.
@@ -229,11 +232,11 @@ def _hinge_terms(board: Board, placements: dict[str, Placement]) -> list[Objecti
             continue
         if isinstance(constraint.relation, Criticality):
             continue
-        raw_nm, status = _hinge(constraint.relation, placements, board)
+        raw_nm, status = hinge(constraint.relation, placements, board)
         terms.append(
             ObjectiveTerm(
                 kind=TermKind.PREFERENCE,
-                ref=f"constraint:{constraint.id}",
+                ref=constraint_ref(constraint.id),
                 weight=constraint.weight,
                 raw_nm=raw_nm,
                 weighted_nm=constraint.weight * raw_nm,
@@ -243,13 +246,18 @@ def _hinge_terms(board: Board, placements: dict[str, Placement]) -> list[Objecti
     return terms
 
 
-def _hinge(
+def hinge(
     relation: Proximity | Region | EdgeMount | KeepTogether,
-    placements: dict[str, Placement],
+    placements: Mapping[str, Placement],
     board: Board,
 ) -> tuple[int, TermStatus]:
     """One hinge's ``(raw_nm, status)`` — dispatched per relation, each
-    reading the same geometry measure its Requirement check reads."""
+    reading the same geometry measure its Requirement check reads.
+
+    Declared reuse face (ADR-0016, #66): the Evaluator computes its
+    PREFERENCE terms through this exact function, so a probe and a full
+    evaluate can never disagree about a hinge.
+    """
     match relation:
         case Proximity():
             return _proximity_hinge(relation, placements)
@@ -269,7 +277,7 @@ def _hinge(
                 relation.target,
                 placements,
                 lambda box: _band_shortfall(
-                    edge_face_offset_nm(box, board.outline, relation.edge.value),
+                    edge_face_offset_nm(box, board.outline, relation.edge),
                     permitted,
                 ),
             )
@@ -279,7 +287,7 @@ def _hinge(
 
 
 def _proximity_hinge(
-    relation: Proximity, placements: dict[str, Placement]
+    relation: Proximity, placements: Mapping[str, Placement]
 ) -> tuple[int, TermStatus]:
     """``max(0, pad_distance_nm − bound)`` — side-insensitive (pinned in
     the module docstring). An unplaced endpoint is PENDING, never a guess.
@@ -301,7 +309,7 @@ def _band_shortfall(offset: int, permitted: int) -> int:
 def _per_member_hinge(
     board: Board,
     target: str,
-    placements: dict[str, Placement],
+    placements: Mapping[str, Placement],
     member_shortfall: Callable[[Rectangle], int],
 ) -> tuple[int, TermStatus]:
     """Sum the per-member shortfall over placed, measurable members —
@@ -311,7 +319,7 @@ def _per_member_hinge(
     all unmeasurable); PARTIAL when measured over a strict subset — an
     anchor unplaced *or* an anchor with nothing to measure; ACTIVE
     otherwise. A courtyard-less member falls back to its pad bounding box
-    (``_measure_box``) and a member with neither is skipped — the checks'
+    (``measure_box``) and a member with neither is skipped — the checks'
     courtyard-less posture, with PARTIAL flagging the skipped subset.
     """
     boxes, any_unmeasured = _measurable_members(board, target, placements)
@@ -325,7 +333,7 @@ def _per_member_hinge(
 
 def _keep_together_hinge(
     relation: KeepTogether,
-    placements: dict[str, Placement],
+    placements: Mapping[str, Placement],
     board: Board,
 ) -> tuple[int, TermStatus]:
     """``max(0, w − max_w) + max(0, h − max_h)`` over the union bounding
@@ -334,11 +342,11 @@ def _keep_together_hinge(
     never a partial guess.
     """
     boxes: list[Rectangle] = []
-    for ref in _anchor_members(board, relation.target):
+    for ref in board.anchor_members(relation.target):
         placement = placements.get(ref)
         if placement is None:
             return 0, TermStatus.PENDING
-        box = _measure_box(placement)
+        box = measure_box(placement)
         if box is None:
             return 0, TermStatus.PENDING
         boxes.append(box)
@@ -350,54 +358,21 @@ def _keep_together_hinge(
 
 
 def _measurable_members(
-    board: Board, target: str, placements: dict[str, Placement]
+    board: Board, target: str, placements: Mapping[str, Placement]
 ) -> tuple[list[Rectangle], bool]:
     """A target's placed, measurable member boxes, plus whether any anchor
     went unmeasured — unplaced, or placed with nothing to measure (the
     PARTIAL signal)."""
     boxes = []
     any_unmeasured = False
-    for ref in _anchor_members(board, target):
+    for ref in board.anchor_members(target):
         placement = placements.get(ref)
         if placement is None:
             any_unmeasured = True
             continue
-        box = _measure_box(placement)
+        box = measure_box(placement)
         if box is None:
             any_unmeasured = True
         else:
             boxes.append(box)
     return boxes, any_unmeasured
-
-
-def _measure_box(placement: Placement) -> Rectangle | None:
-    """The box Region, EdgeMount, and KeepTogether measure: the courtyard's
-    AABB, or the pad bounding box when there is no courtyard (ADR-0011's
-    fallback, #42). A footprint with neither has nothing to measure:
-    ``None``. A deliberate private mirror of the drc module's helper —
-    one definition in geometry, the same call shape both sides.
-    """
-    yard = world_courtyard(placement)
-    if yard is not None:
-        return shape_aabb(yard)
-    try:
-        return pad_world_bbox(placement)
-    except ValueError:
-        return None
-
-
-def _anchor_members(board: Board, target: str) -> tuple[str, ...]:
-    """A relation's target expanded to placement refs (ADR-0011):
-    ``placement:<ref>`` is that ref alone, ``group:<id>`` the Group's
-    canonically sorted refs. A deliberate private mirror of the drc
-    module's helper — ``with_constraint`` validated every anchor, and an
-    inconsistent construction raises ``UnknownConstraintRef`` here
-    rather than surfacing as a bare miss downstream.
-    """
-    kind, name = anchor_parts(target)
-    if kind == "placement":
-        return (name,)
-    for group in board.groups:
-        if group.id == name:
-            return group.refs
-    raise UnknownConstraintRef(target)

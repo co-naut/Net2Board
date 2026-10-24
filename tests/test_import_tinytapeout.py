@@ -68,8 +68,12 @@ class TestHulledRealLibraryCourtyards:
             min=Point(-23_900_000, -25_900_000), max=Point(23_900_000, 25_900_000)
         )
 
-    def test_board_extracted_soic_8_resolves_despite_nickname(self):
-        """The extracted file declares `Package_SO:SOIC-8_…` internally."""
+    def test_library_form_soic_8_resolves_despite_nickname(self):
+        """ADR-0022 — the fixture is the library form of the entry, not a
+        board instance: instance data stripped (board position, uuids,
+        nets, pin annotations), pads token-less. The internal
+        `Package_SO:` nickname stays, so the strip rule keeps its
+        teeth."""
         fp = parse_footprint(
             (TINY_FP_DIR / "SOIC-8_5.23x5.23mm_P1.27mm.kicad_mod").read_text()
         )
@@ -77,3 +81,5 @@ class TestHulledRealLibraryCourtyards:
         assert fp.courtyard == Rectangle(
             min=Point(-4_650_000, -2_860_000), max=Point(4_650_000, 2_860_000)
         )
+        assert {pad.local_rotation for pad in fp.pads} == {0}
+        assert len(fp.pads) == 8

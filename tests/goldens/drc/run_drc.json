@@ -36,5 +36,81 @@
     ],
     "severity": "error",
     "type": "courtyards_overlap"
+  },
+  {
+    "description": "Shorting items: placement:C1 pad 1 and placement:C2 pad 1",
+    "locations": [
+      {
+        "x": 30000000,
+        "y": 22000000
+      },
+      {
+        "x": 30000000,
+        "y": 22000000
+      }
+    ],
+    "offending_refs": [
+      "placement:C1",
+      "placement:C2"
+    ],
+    "severity": "error",
+    "type": "shorting_items"
+  },
+  {
+    "description": "Shorting items: placement:C1 pad 2 and placement:C2 pad 2",
+    "locations": [
+      {
+        "x": 35000000,
+        "y": 22000000
+      },
+      {
+        "x": 35000000,
+        "y": 22000000
+      }
+    ],
+    "offending_refs": [
+      "placement:C1",
+      "placement:C2"
+    ],
+    "severity": "error",
+    "type": "shorting_items"
+  },
+  {
+    "description": "Shorting items: placement:R1 pad 1 and placement:R2 pad 1",
+    "locations": [
+      {
+        "x": 8000000,
+        "y": 6000000
+      },
+      {
+        "x": 8000000,
+        "y": 6000000
+      }
+    ],
+    "offending_refs": [
+      "placement:R1",
+      "placement:R2"
+    ],
+    "severity": "error",
+    "type": "shorting_items"
+  },
+  {
+    "description": "Shorting items: placement:R1 pad 2 and placement:R2 pad 2",
+    "locations": [
+      {
+        "x": 15620000,
+        "y": 6000000
+      },
+      {
+        "x": 15620000,
+        "y": 6000000
+      }
+    ],
+    "offending_refs": [
+      "placement:R1",
+      "placement:R2"
+    ],
+    "severity": "error",
+    "type": "shorting_items"
   }
 ]

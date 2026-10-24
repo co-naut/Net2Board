@@ -51,7 +51,9 @@ from net2board.objective import (
     ObjectiveTerm,
     TermKind,
     TermStatus,
+    criticality_weights,
     evaluate,
+    hinge,
 )
 
 X = 10_000_000
@@ -623,6 +625,106 @@ class TestTheHingeReusesTheChecksMeasure:
         assert hinge.raw_nm == 2_000_000
         # and Preferences never produce Violations (ADR-0011)
         assert run_drc(preference_board) == ()
+
+    @pytest.mark.parametrize(
+        ("violation_type", "board_of_kind"),
+        [
+            pytest.param(
+                ViolationType.PROXIMITY_UNMET,
+                lambda kind: (
+                    tiny_board()
+                    .with_constraint(proximity(kind=kind))
+                    .with_placement("R1", X, Y, 0, "F.Cu")
+                    .with_placement("R2", X + 9_620_000, Y, 0, "F.Cu")
+                ),
+                id="proximity",
+            ),
+            pytest.param(
+                ViolationType.REGION_UNMET,
+                lambda kind: (
+                    tiny_board()
+                    .with_constraint(
+                        region(
+                            Rectangle(min=Point(0, 0), max=Point(5_000_000, 5_000_000)),
+                            kind=kind,
+                        )
+                    )
+                    .with_placement("R1", X, Y, 0, "F.Cu")
+                ),
+                id="region",
+            ),
+            pytest.param(
+                ViolationType.EDGE_MOUNT_UNMET,
+                lambda kind: (
+                    tiny_board()
+                    .with_constraint(edge_mount(kind=kind))
+                    .with_placement("R1", X, Y, 0, "F.Cu")
+                ),
+                id="edge_mount",
+            ),
+            pytest.param(
+                ViolationType.KEEP_TOGETHER_UNMET,
+                lambda kind: (
+                    tiny_board()
+                    .with_group(Group(id="pair", refs=("R1", "R2")))
+                    .with_constraint(keep_together(2_000_000, 500_000, kind=kind))
+                    .with_placement("R1", X, Y, 0, "F.Cu")
+                    .with_placement("R2", X + 9_620_000, Y, 0, "F.Cu")
+                ),
+                id="keep_together",
+            ),
+        ],
+    )
+    def test_every_check_hinge_pair_reads_one_measure(
+        self, violation_type, board_of_kind
+    ):
+        """The #65 single-definition invariant, every pairable relation:
+        a Board whose Requirement form fires the check measures a strictly
+        positive hinge under the Preference form — one measure box and one
+        anchor expansion behind both readings."""
+        requirement_board = board_of_kind(Requirement())
+        assert any(v.type is violation_type for v in run_drc(requirement_board)), (
+            "the case must fire the check for the property to bind"
+        )
+
+        preference_board = board_of_kind(Preference())
+        hinge = next(
+            t
+            for t in evaluate(preference_board).terms
+            if t.ref.startswith("constraint:")
+        )
+        assert hinge.raw_nm > 0
+        # and the Preference twin stays check-silent (ADR-0011)
+        assert run_drc(preference_board) == ()
+
+
+class TestTheDeclaredReuseFace:
+    """The hinge face is a declared member of the module (ADR-0016's
+    reuse protocol, #66): the Evaluator reads exactly what ``evaluate``
+    reports, through the front door."""
+
+    def test_hinge_is_what_the_preference_term_reports(self):
+        board = (
+            tiny_board()
+            .with_constraint(proximity())
+            .with_placement("R1", X, Y, 0, "F.Cu")
+            .with_placement("R2", X + 9_620_000, Y, 0, "F.Cu")
+        )
+        placements = {placement.ref: placement for placement in board.placements}
+        (constraint,) = board.constraints
+        assert hinge(constraint.relation, placements, board) == (
+            2_000_000,
+            TermStatus.ACTIVE,
+        )
+        assert term(evaluate(board), "constraint:cap-near").raw_nm == 2_000_000
+
+    def test_criticality_weights_read_the_board_last_stated_wins(self):
+        board = fresh_board().with_constraint(
+            criticality(net="N1", weight=3, id="first")
+        )
+        assert criticality_weights(board) == {"N1": 3}
+        restated = board.with_constraint(criticality(net="N1", weight=5, id="second"))
+        assert criticality_weights(restated) == {"N1": 5}
 
 
 class TestShape:

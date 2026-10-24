@@ -1,6 +1,6 @@
 [project]
 name = "net2board"
-version = "0.2.0"
+version = "0.3.0"
 description = "Model the physical realization of a circuit - netlist to board layout - as a library for an external AI orchestrator."
 readme = "README.md"
 license = "MIT"
@@ -30,7 +30,8 @@ extend-select = ["I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["--strict-markers", "-m", "not slow"]
+addopts = ["--strict-markers", "-m", "not slow and not route", "--durations=15"]
 markers = [
-    "slow: kicad-cli oracle tier (opt-in; auto-skips when kicad-cli is absent)",
+    "slow: kicad-cli oracle and acceptance tier (opt-in; no routing — that is `route`; auto-skips when kicad-cli is absent)",
+    "route: the Freerouting tier (opt-in; ~5 min per ecc83 chain, ~40 min the solver tiny chain, ~30 min the env-gated human re-measure; auto-skips when the jar, java, system python3+pcbnew, or kicad-cli are absent)",
 ]

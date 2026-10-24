@@ -211,14 +211,15 @@ class TestRuntimePurity:
     def test_package_never_shells_out_or_parses_schematics(self):
         """The engine never shells out and never reads schematics — no
         oracle call in any runtime path (ADR-0007, README's moat). The
-        one exemption is the session harness (``examples/session.py``,
-        ADR-0019's example-plus-slow-tier module): its slow face runs the
-        ``kicad-cli`` oracle exactly as this suite's slow tier does — a
-        harness duty beside the examples, never an engine path — so only
+        one exemption is the harness's oracle seam
+        (``harness/oracle.py``, #88's Protocol — ADR-0019's
+        example-plus-slow-tier module moved to the package by #104): its
+        slow face runs the ``kicad-cli`` oracle exactly as this suite's
+        slow tier does — a harness duty, never an engine path — so only
         ``subprocess`` may appear there, and anywhere else any banned
         token fails here."""
         pkg = Path(__file__).resolve().parent.parent / "src" / "net2board"
-        harness = pkg / "examples" / "session.py"
+        harness = pkg / "harness" / "oracle.py"
         engine_banned = ("subprocess", "os.system", "os.popen", "kicad_sch")
         harness_banned = tuple(t for t in engine_banned if t != "subprocess")
         for src in sorted(pkg.rglob("*.py")):

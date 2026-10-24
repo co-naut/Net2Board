@@ -100,17 +100,25 @@ class TestFinalBoard:
 
 
 class TestDetectAndFixBeat:
-    def test_placing_into_an_overlap_yields_exactly_one_violation(self):
+    def test_placing_into_an_overlap_yields_the_overlap_and_the_pad_shorts(self):
+        # the beat's own courtyards_overlap plus the coincident-pad
+        # shorts the copper checks price since #91 — two plates landing
+        # on each other short twice
         board = beat_overlap_board(build_board(load_ecc83_spec()))
         assert board.unplaced_refs() == ()
         violations = run_drc(board)
-        assert len(violations) == 1
-        (violation,) = violations
-        assert violation.type is ViolationType.COURTYARDS_OVERLAP
+        assert len(violations) == 3
+        (violation,) = [
+            v for v in violations if v.type is ViolationType.COURTYARDS_OVERLAP
+        ]
         assert violation.offending_refs == ("placement:R1", "placement:R2")
-        assert (
-            violation.description == "Courtyards overlap: placement:R1 and placement:R2"
+        assert violation.description == (
+            "Courtyards overlap: placement:R1 and placement:R2"
         )
+        assert [v.type for v in violations if v.type is not violation.type] == [
+            ViolationType.SHORTING_ITEMS,
+            ViolationType.SHORTING_ITEMS,
+        ]
 
     def test_one_move_clears_it_and_lands_on_the_final_board(self):
         overlapped = beat_overlap_board(build_board(load_ecc83_spec()))
@@ -131,10 +139,13 @@ class TestExport:
 
 
 class TestExamplesSurface:
-    def test_surface_is_the_table_the_script_and_the_session(self):
+    def test_surface_is_the_table_the_script_the_session_and_the_profiler(self):
+        # ``profile`` is the dev-only whole-run profiler (ADR-0026, #99);
+        # pytest never collects or runs it — this pin keeps its arrival
+        # on the surface deliberate, like every golden.
         assert sorted(
             module.name for module in pkgutil.iter_modules(net2board.examples.__path__)
-        ) == ["ecc83", "ecc83_placements", "session"]
+        ) == ["ecc83", "ecc83_placements", "profile", "session", "tiny_demo_placements"]
 
 
 class TestRunnableExample:
@@ -147,5 +158,5 @@ class TestRunnableExample:
             check=False,
         )
         assert result.returncode == 0, result.stderr
-        assert "1 violation" in result.stdout
+        assert "3 violations" in result.stdout
         assert output.read_bytes() == export_pcb(final_board()).encode()

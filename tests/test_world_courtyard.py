@@ -2,9 +2,10 @@
 
 The transform composes, innermost first: mirror local x on the back side
 (KiCad's left-right flip — the writer owns the mirror; the oracle applies
-translate + rotate only, probed on kicad-cli 10.0.6), rotate 90°-increment
-CCW-as-displayed in the y-down board frame, translate to the anchor.
-``None`` courtyard stays ``None`` — the overlap check skips it.
+translate + rotate only, probed under the exporter's ``ORACLE_TARGET``),
+rotate 90°-increment CCW-as-displayed in the y-down board frame, translate
+to the anchor. ``None`` courtyard stays ``None`` — the overlap check skips
+it.
 """
 
 import pytest

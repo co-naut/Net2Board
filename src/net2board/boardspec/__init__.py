@@ -8,11 +8,13 @@ each referenced footprint to ``FootprintIR``.
 
 The structured binding-failure hierarchy rooted at ``BoardSpecError`` is
 pinned here: the loader raises ``FootprintNotFound``,
-``FootprintResolveError``, and ``UnsupportedCourtyardShape`` (the last is
-raised by the ``ir`` parsers acting as the loader's parse phase, ADR-0008);
-``build_board`` raises ``PinPadBindingError``. The root itself extends the
-library-wide ``Net2BoardError`` (ADR-0013's reconciliation) — structural
-only, the phase split of ADR-0008 is untouched.
+``FootprintResolveError``, ``UnsupportedCourtyardShape``, and
+``UnsupportedPadRotation`` (the last two are raised by the ``ir`` parsers
+acting as the loader's parse phase, ADR-0008; the pad-angle raise is
+ADR-0022's posture — a non-90°-multiple pad angle would make the pad-copper
+algebra silently wrong); ``build_board`` raises ``PinPadBindingError``. The
+root itself extends the library-wide ``Net2BoardError`` (ADR-0013's
+reconciliation) — structural only, the phase split of ADR-0008 is untouched.
 
 The error classes below are defined before the ``ir`` import on purpose:
 ``net2board.ir`` imports the parsers at its tail, the parsers import these
@@ -23,19 +25,24 @@ cycle.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from net2board.errors import Net2BoardError
 from net2board.geometry import Rectangle
+from net2board.model import DesignRules
 
 __all__ = [
     "BoardSpec",
     "BoardSpecError",
+    "DesignRules",
     "FootprintNotFound",
     "FootprintResolveError",
     "PinPadBindingError",
     "UnsupportedCourtyardShape",
+    "UnsupportedPadPrimitive",
+    "UnsupportedPadRotation",
+    "UnsupportedPadType",
 ]
 
 
@@ -99,6 +106,72 @@ class UnsupportedCourtyardShape(BoardSpecError):
 
 
 @dataclass(frozen=True)
+class UnsupportedPadRotation(BoardSpecError):
+    """A pad angle off the 90° multiples (ADR-0022).
+
+    KiCad pads may carry any angle, but the pad-copper algebra is exact
+    only at the 90° multiples; anything else raises at load — the
+    ADR-0015 posture — rather than checking geometry silently wrong.
+    ``angle`` is the normalized ``[0, 360)`` degree value.
+    """
+
+    entry_name: str
+    pad_number: str
+    angle: int
+
+    def __str__(self) -> str:
+        return (
+            f"pad {self.pad_number!r} of footprint {self.entry_name!r}: pad "
+            f"angle {self.angle} is not a multiple of 90"
+        )
+
+
+@dataclass(frozen=True)
+class UnsupportedPadType(BoardSpecError):
+    """A pad type token the copper model does not price (ADR-0022).
+
+    ``smd`` and ``thru_hole`` proceed; ``np_thru_hole`` and ``connect``
+    raise at load — today's exporter would silently write an NPTH pad as
+    ``thru_hole``, and the clearance check must not price copper that will
+    not exist (KiCad's NPTH copper is an annulus around the hole, not the
+    pad's stated size).
+    """
+
+    entry_name: str
+    pad_number: str
+    pad_type: str
+
+    def __str__(self) -> str:
+        return (
+            f"pad {self.pad_number!r} of footprint {self.entry_name!r}: pad "
+            f"type {self.pad_type!r} is not priced by the copper model "
+            f"(smd and thru_hole are; np_thru_hole and connect raise until "
+            f"a fixture needs the real rule)"
+        )
+
+
+@dataclass(frozen=True)
+class UnsupportedPadPrimitive(BoardSpecError):
+    """A custom-pad primitive outside the hull vocabulary (ADR-0022).
+
+    ``gr_circle``, ``gr_rect``, ``gr_poly`` and ``gr_line`` reduce to a
+    bounding rectangle of the copper extent; anything else raises at load
+    rather than hulling a shape silently wrong.
+    """
+
+    entry_name: str
+    pad_number: str
+    primitive: str
+
+    def __str__(self) -> str:
+        return (
+            f"pad {self.pad_number!r} of footprint {self.entry_name!r}: custom-pad "
+            f"primitive {self.primitive!r} is not hullable (gr_circle, gr_rect, "
+            f"gr_poly and gr_line are)"
+        )
+
+
+@dataclass(frozen=True)
 class PinPadBindingError(BoardSpecError):
     """A netlist pin has no pad with a matching number on its footprint.
 
@@ -118,17 +191,21 @@ from net2board.ir import FootprintIR, NetlistIR
 
 @dataclass(frozen=True)
 class BoardSpec:
-    """The input to ``build_board``: parsed IR, outline, and stackup.
+    """The input to ``build_board``: parsed IR, outline, stackup, and the
+    board's ``DesignRules`` (ADR-0020 — defaulting to KiCad's fresh-project
+    numbers).
 
     ``footprint_irs`` is keyed by bare library entry name (the loader's
     nickname-strip rule); ``stackup`` is canonical layer names. The resulting
-    Board absorbs outline and stackup and does not retain this spec.
+    Board absorbs outline, stackup, and design rules and does not retain
+    this spec.
     """
 
     netlist_ir: NetlistIR
     footprint_irs: dict[str, FootprintIR]
     outline: Rectangle
     stackup: tuple[str, ...]
+    design_rules: DesignRules = field(default_factory=DesignRules)
 
     @classmethod
     def from_files(
@@ -137,6 +214,7 @@ class BoardSpec:
         footprint_lib_dir: Path | str,
         outline: Rectangle,
         stackup: tuple[str, ...],
+        design_rules: DesignRules | None = None,
     ) -> BoardSpec:
         """Load a netlist and its footprint library directory into a spec.
 
@@ -175,4 +253,5 @@ class BoardSpec:
             footprint_irs=footprint_irs,
             outline=outline,
             stackup=stackup,
+            design_rules=design_rules or DesignRules(),
         )

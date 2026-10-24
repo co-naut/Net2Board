@@ -4,7 +4,7 @@ Construction validates every value-level invariant eagerly — anchor
 grammar, kinds, weights, extents — so malformed intent never reaches a
 Board. Reference-level validation (does the ref/group/net exist *here*?)
 is the mutation's job, pinned in ``test_board_constraints``. The public
-names are the CONTEXT.md vocabulary verbatim: Requirement, Preference,
+names are the GLOSSARY.md vocabulary verbatim: Requirement, Preference,
 Proximity, Region, EdgeMount, KeepTogether, Criticality.
 """
 
@@ -18,8 +18,10 @@ from net2board.model import (
     Criticality,
     Edge,
     EdgeMount,
+    Footprint,
     Group,
     KeepTogether,
+    Pad,
     Preference,
     Proximity,
     Region,
@@ -263,3 +265,29 @@ class TestErrorTree:
     def test_leaves_are_frozen_dataclasses(self):
         with pytest.raises(Exception, match="assign"):
             UnknownConstraintId("ghost").id = "other"
+
+
+class TestFootprintPad:
+    """The one by-number pad read (ADR-0011's authoring posture): pad
+    existence checks go through it, error types stay with the callers."""
+
+    def footprint(self, *numbers: str) -> Footprint:
+        pads = tuple(
+            Pad(
+                number=number,
+                local_pos=Point(0, 0),
+                size=(1_000_000, 1_000_000),
+                drill=None,
+                layers=("F.Cu",),
+                shape_enum="rect",
+            )
+            for number in numbers
+        )
+        return Footprint(entry_name="RES", pads=pads, courtyard=None)
+
+    def test_the_named_pad_comes_back(self):
+        footprint = self.footprint("1", "2")
+        assert footprint.pad("2") is footprint.pads[1]
+
+    def test_an_unknown_number_is_none(self):
+        assert self.footprint("1").pad("7") is None

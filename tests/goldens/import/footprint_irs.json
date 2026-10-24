@@ -11,9 +11,11 @@
       }
     },
     "entry_name": "Altech_AK300_1x02_P5.00mm_45-Degree",
+    "net_tie_groups": [],
     "pads": [
       {
         "drill": 1500000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -22,7 +24,9 @@
           "x": 0,
           "y": 0
         },
+        "local_rotation": 0,
         "number": "1",
+        "roundrect_rratio": null,
         "shape_enum": "rect",
         "size": [
           3000000,
@@ -31,6 +35,7 @@
       },
       {
         "drill": 1500000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -39,7 +44,9 @@
           "x": 5000000,
           "y": 0
         },
+        "local_rotation": 0,
         "number": "2",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           3000000,
@@ -61,9 +68,11 @@
       "radius_sq": 27562500000000
     },
     "entry_name": "CP_Radial_D10.0mm_P5.00mm",
+    "net_tie_groups": [],
     "pads": [
       {
         "drill": 1000000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -72,7 +81,9 @@
           "x": 0,
           "y": 0
         },
+        "local_rotation": 0,
         "number": "1",
+        "roundrect_rratio": null,
         "shape_enum": "rect",
         "size": [
           2000000,
@@ -81,6 +92,7 @@
       },
       {
         "drill": 1000000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -89,7 +101,9 @@
           "x": 5000000,
           "y": 0
         },
+        "local_rotation": 0,
         "number": "2",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           2000000,
@@ -110,9 +124,11 @@
       }
     },
     "entry_name": "C_Disc_D4.7mm_W2.5mm_P5.00mm",
+    "net_tie_groups": [],
     "pads": [
       {
         "drill": 800000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -121,7 +137,9 @@
           "x": 0,
           "y": 0
         },
+        "local_rotation": 0,
         "number": "1",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           1600000,
@@ -130,6 +148,7 @@
       },
       {
         "drill": 800000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -138,7 +157,9 @@
           "x": 5000000,
           "y": 0
         },
+        "local_rotation": 0,
         "number": "2",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           1600000,
@@ -160,9 +181,11 @@
       "radius_sq": 9302500000000
     },
     "entry_name": "MountingHole_3.2mm_M3_DIN965_Pad",
+    "net_tie_groups": [],
     "pads": [
       {
         "drill": 3200000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -171,7 +194,9 @@
           "x": 0,
           "y": 0
         },
+        "local_rotation": 0,
         "number": "1",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           5600000,
@@ -192,9 +217,11 @@
       }
     },
     "entry_name": "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal",
+    "net_tie_groups": [],
     "pads": [
       {
         "drill": 800000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -203,7 +230,9 @@
           "x": 0,
           "y": 0
         },
+        "local_rotation": 0,
         "number": "1",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           1600000,
@@ -212,6 +241,7 @@
       },
       {
         "drill": 800000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -220,7 +250,9 @@
           "x": 7620000,
           "y": 0
         },
+        "local_rotation": 0,
         "number": "2",
+        "roundrect_rratio": null,
         "shape_enum": "oval",
         "size": [
           1600000,
@@ -242,9 +274,11 @@
       "radius_sq": 112360000000000
     },
     "entry_name": "Valve_ECC-83-1",
+    "net_tie_groups": [],
     "pads": [
       {
         "drill": 1020000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -253,7 +287,9 @@
           "x": 3450000,
           "y": 4800000
         },
+        "local_rotation": 0,
         "number": "1",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           2030000,
@@ -262,6 +298,7 @@
       },
       {
         "drill": 1020000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -270,7 +307,9 @@
           "x": 5600000,
           "y": 1870000
         },
+        "local_rotation": 0,
         "number": "2",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           2030000,
@@ -279,6 +318,7 @@
       },
       {
         "drill": 1020000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -287,7 +327,9 @@
           "x": 5600000,
           "y": -1780000
         },
+        "local_rotation": 0,
         "number": "3",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           2030000,
@@ -296,6 +338,7 @@
       },
       {
         "drill": 1020000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -304,7 +347,9 @@
           "x": 3450000,
           "y": -4710000
         },
+        "local_rotation": 0,
         "number": "4",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           2030000,
@@ -313,6 +358,7 @@
       },
       {
         "drill": 1020000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -321,7 +367,9 @@
           "x": 0,
           "y": -5850000
         },
+        "local_rotation": 0,
         "number": "5",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           2030000,
@@ -330,6 +378,7 @@
       },
       {
         "drill": 1020000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -338,7 +387,9 @@
           "x": -3460000,
           "y": -4710000
         },
+        "local_rotation": 0,
         "number": "6",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           2030000,
@@ -347,6 +398,7 @@
       },
       {
         "drill": 1020000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -355,7 +407,9 @@
           "x": -5610000,
           "y": -1780000
         },
+        "local_rotation": 0,
         "number": "7",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           2030000,
@@ -364,6 +418,7 @@
       },
       {
         "drill": 1020000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -372,7 +427,9 @@
           "x": -5610000,
           "y": 1830000
         },
+        "local_rotation": 0,
         "number": "8",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           2030000,
@@ -381,6 +438,7 @@
       },
       {
         "drill": 1020000,
+        "hull": null,
         "layers": [
           "*.Cu",
           "*.Mask"
@@ -389,7 +447,9 @@
           "x": -3460000,
           "y": 4800000
         },
+        "local_rotation": 0,
         "number": "9",
+        "roundrect_rratio": null,
         "shape_enum": "circle",
         "size": [
           2030000,

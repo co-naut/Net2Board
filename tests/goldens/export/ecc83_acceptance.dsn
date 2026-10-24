@@ -5,11 +5,17 @@
 		(layer B.Cu (type signal))
 		(boundary
 			(path pcb 0 0 0 40000 0 40000 -30000 0 -30000 0 0)
+			(clearance_class edge)
 		)
 		(via Via_800)
 		(rule
 			(width 250)
-			(clearance 250)
+			(clearance 200)
+			(clearance 500 (type wire_edge))
+			(clearance 500 (type via_edge))
+			(clearance 500 (type smd_edge))
+			(clearance 500 (type pin_edge))
+			(clearance 500 (type area_edge))
 		)
 	)
 	(placement
@@ -155,7 +161,7 @@
 			)
 			(rule
 				(width 250)
-				(clearance 250)
+				(clearance 200)
 			)
 		)
 	)

@@ -3,10 +3,11 @@
 The outermost verifier: both acceptance faces of the ecc83 board — the
 clean placement table and the one-move overlap variant rebuilt on top of
 it — are exported and handed to the installed ``kicad-cli pcb drc``
-(JSON, ``--severity-all``; probed on kicad-cli 10.0.6). Assertions:
+(JSON, ``--severity-all``; probed under the exporter's
+``ORACLE_TARGET``). Assertions:
 
-- Parse acceptance: the oracle exits 0, captured against the subprocess
-  directly — no shell pipe may mask it (T3 pitfall).
+- Parse acceptance: the oracle's status is ``PARSED``, mapped from the
+  subprocess's own exit code — no shell pipe may mask it (T3 pitfall).
 - Ratsnest present: ``unconnected_items`` is non-empty (M1 routes
   nothing, so every multi-pad net must appear unrouted).
 - Per-net coverage: the ratsnest names exactly the board's multi-pad
@@ -26,10 +27,7 @@ and is deselected by default (``pytest -m slow`` opts in): the tier
 stays a local sign-off step — CI gates the fast tier only (ADR-0010).
 """
 
-import json
 import re
-import shutil
-import subprocess
 
 import pytest
 
@@ -37,19 +35,18 @@ from conftest import load_ecc83_spec
 from net2board.build import build_board
 from net2board.drc import ViolationType, run_drc
 from net2board.examples.ecc83_placements import BEAT_OVERLAP_ROW, apply_placements
-from net2board.export import export_pcb
+from net2board.export import ORACLE_TARGET, export_pcb
+from net2board.harness.oracle import (
+    OracleStatus,
+    oracle_violation_count,
+    ratsnest_net_names,
+)
 
 pytestmark = [
     pytest.mark.slow,
-    pytest.mark.skipif(
-        shutil.which("kicad-cli") is None,
-        reason="kicad-cli is not installed — the slow tier is a local "
-        "sign-off step, run deliberately with `pytest -m slow` (ADR-0010)",
-    ),
 ]
 
 _ORACLE_OVERLAP_TYPE = ViolationType.COURTYARDS_OVERLAP.value
-_DRC_COMMAND = ("kicad-cli", "pcb", "drc", "--format", "json", "--severity-all")
 
 
 def acceptance_board():
@@ -68,64 +65,68 @@ def overlapped_board():
     return acceptance_board().with_placement(*BEAT_OVERLAP_ROW)
 
 
-def oracle_drc(name, board, tmp_path):
+def oracle_drc(oracle_report, name, board):
     """Export ``board`` and run the installed oracle over the file.
 
-    Exit 0 is asserted against the subprocess itself: plain ``pcb drc``
-    reports violations in the JSON while exiting 0, so 0 here means the
-    board was parsed and checked (exit 3 = parse failure, pinned in
-    TestOracleContract).
-    """
-    board_path = tmp_path / f"{name}.kicad_pcb"
-    board_path.write_text(export_pcb(board))
-    report_path = tmp_path / f"{name}.drc.json"
-    result = subprocess.run(
-        (*_DRC_COMMAND, "-o", str(report_path), str(board_path)),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, (
-        f"kicad-cli exited {result.returncode} (3 = parse failure)\n"
-        f"stdout:\n{result.stdout}stderr:\n{result.stderr}"
-    )
-    return json.loads(report_path.read_text())
+    Parse acceptance is the adapter's ``PARSED`` status: plain ``pcb drc``
+    reports violations in the JSON while exiting 0, so PARSED here means
+    the board was parsed and checked (exit 3 = parse failure, pinned in
+    TestOracleContract). The conftest ``oracle_report`` factory is the
+    one gate (#104)."""
+    return oracle_report(export_pcb(board), name)
 
 
-def oracle_violation_count(report, violation_type):
-    """How many oracle violations carry ``violation_type`` — per type only."""
-    return sum(
-        1 for violation in report["violations"] if violation["type"] == violation_type
-    )
+_PAD_COPPER_TYPES = (
+    ViolationType.SHORTING_ITEMS,
+    ViolationType.CLEARANCE,
+    ViolationType.COPPER_EDGE_CLEARANCE,
+)
 
 
-_NET_TOKEN = re.compile(r"\[([^]]+)\]")
+class TestPadCopperParity:
+    """#91's parity receipt on the acceptance board (ADR-0022): shorts
+    and clearance parity 0 = 0, and the edge check is the receipt's one
+    pinned divergence — KiCad has no EdgeMount concept and reports the
+    near-edge pads; we exempt them by stated intent (the board's
+    Requirement EdgeMounts, ADR-0018's mechanism extended to pad
+    copper). The oracle's 9 is measured under the judged rules (the
+    fresh-project 0.5 mm default our export lets it read)."""
 
+    @pytest.fixture(scope="class")
+    def report(self, oracle_report):
+        return oracle_report(export_pcb(acceptance_board()), "pad-parity")
 
-def ratsnest_net_names(report):
-    """Every net name the oracle's ratsnest references.
+    def test_shorts_and_clearance_parity(self, report):
+        run = run_drc(acceptance_board())
+        for check in (ViolationType.SHORTING_ITEMS, ViolationType.CLEARANCE):
+            ours = sum(1 for violation in run if violation.type is check)
+            assert ours == oracle_violation_count(report, check.value) == 0
 
-    kicad-cli 10.0.6 embeds each pad's net in its item description and
-    carries no structured net field, so the bracketed token is the only
-    naming available (probed in #18). An item without one fails loudly —
-    a report-format change must stop the sign-off, not silently pass it.
-    """
-    names = set()
-    for entry in report["unconnected_items"]:
-        for item in entry["items"]:
-            match = _NET_TOKEN.search(item["description"])
-            assert match, (
-                f"oracle pad item carries no [net] token: "
-                f"{item['description']!r} — check the installed kicad-cli's "
-                f"JSON description format"
-            )
-            names.add(match.group(1))
-    return names
+    def test_the_edge_divergence_is_the_exemption(self, report):
+        ours = sum(
+            1
+            for violation in run_drc(acceptance_board())
+            if violation.type is ViolationType.COPPER_EDGE_CLEARANCE
+        )
+        assert ours == 0
+        assert oracle_violation_count(report, "copper_edge_clearance") == 9
 
 
 def multi_pad_net_names(board):
     """The nets that can form an unconnected pair: two or more pads."""
     return {net.name for net in board.nets if len(net.pins) >= 2}
+
+
+@pytest.fixture(scope="module")
+def clean_report(oracle_report):
+    """The clean board's oracle report — one kicad-cli run per module."""
+    return oracle_drc(oracle_report, "clean", acceptance_board())
+
+
+@pytest.fixture(scope="module")
+def overlapped_report(oracle_report):
+    """The overlapped variant's oracle report — one kicad-cli run per module."""
+    return oracle_drc(oracle_report, "overlapped", overlapped_board())
 
 
 @pytest.mark.parametrize(
@@ -134,28 +135,35 @@ def multi_pad_net_names(board):
     ids=("clean", "overlapped"),
 )
 class TestBothBoards:
-    def test_oracle_accepts_the_export(self, tmp_path, name, make_board):
-        """Parse acceptance: exit 0 and a JSON report (ADR-0010, assertion 1)."""
-        oracle_drc(name, make_board(), tmp_path)
+    """ADR-0010's assertions on both acceptance boards, read off the
+    module-scoped ``clean_report`` / ``overlapped_report`` fixtures —
+    the oracle runs once per board, not once per test, so the module's
+    whole oracle bill is three kicad-cli runs (contract probe included).
+    The board itself is rebuilt per test where a comparison needs it:
+    an in-process ``build_board`` call, no oracle cost."""
 
-    def test_ratsnest_is_present(self, tmp_path, name, make_board):
+    def test_oracle_accepts_the_export(self, request, name, make_board):
+        """Parse acceptance: exit 0 and a JSON report (ADR-0010, assertion 1)."""
+        request.getfixturevalue(f"{name}_report")
+
+    def test_ratsnest_is_present(self, request, name, make_board):
         """M1 routes nothing — every multi-pad net must show as unrouted."""
-        report = oracle_drc(name, make_board(), tmp_path)
+        report = request.getfixturevalue(f"{name}_report")
         assert len(report["unconnected_items"]) > 0
 
     def test_ratsnest_covers_exactly_the_multi_pad_nets(
-        self, tmp_path, name, make_board
+        self, request, name, make_board
     ):
         board = make_board()
-        report = oracle_drc(name, board, tmp_path)
+        report = request.getfixturevalue(f"{name}_report")
         assert ratsnest_net_names(report) == multi_pad_net_names(board)
 
-    def test_outline_is_valid(self, tmp_path, name, make_board):
-        report = oracle_drc(name, make_board(), tmp_path)
+    def test_outline_is_valid(self, request, name, make_board):
+        report = request.getfixturevalue(f"{name}_report")
         assert oracle_violation_count(report, "invalid_outline") == 0
 
     def test_containment_is_clean_with_no_oracle_analogue(
-        self, tmp_path, name, make_board
+        self, request, name, make_board
     ):
         """ADR-0018: the oracle has no containment check to pair with — ours
         counts 0 on the acceptance board (the EdgeMounts state its
@@ -168,48 +176,68 @@ class TestBothBoards:
             if violation.type is ViolationType.COURTYARD_OUTSIDE_OUTLINE
         )
         assert ours == 0
-        report = oracle_drc(name, board, tmp_path)
+        report = request.getfixturevalue(f"{name}_report")
         assert oracle_violation_count(report, "courtyard_outside_outline") == 0
 
 
 class TestCourtyardsOverlapParity:
     """ADR-0010 assertion 5 — per-type counts, clean 0 = 0, overlapped 1 = 1."""
 
-    def test_clean_board_is_clean_on_both_sides(self, tmp_path):
+    def test_clean_board_is_clean_on_both_sides(self, request):
         board = acceptance_board()
         assert run_drc(board) == ()
-        report = oracle_drc("clean", board, tmp_path)
+        report = request.getfixturevalue("clean_report")
         assert oracle_violation_count(report, _ORACLE_OVERLAP_TYPE) == 0
 
-    def test_overlapped_variant_counts_match_per_type(self, tmp_path):
+    def test_overlapped_variant_counts_match_per_type(self, request):
         board = overlapped_board()
         ours = sum(
             1
             for violation in run_drc(board)
             if violation.type is ViolationType.COURTYARDS_OVERLAP
         )
-        report = oracle_drc("overlapped", board, tmp_path)
+        report = request.getfixturevalue("overlapped_report")
         theirs = oracle_violation_count(report, _ORACLE_OVERLAP_TYPE)
         assert ours > 0
         assert theirs == ours
 
 
 class TestOracleContract:
-    def test_parse_failure_surfaces_as_exit_3_with_no_report(self, tmp_path):
-        """The exit code is the subprocess's own.
+    def test_installed_oracle_meets_the_declared_target(self, kicad_cli):
+        """The tier's parity claims are probed facts bound to the
+        exporter's declared oracle floor (``ORACLE_TARGET``, #86): an
+        installed kicad-cli older than the floor fails here loudly,
+        instead of silently re-checking those claims against an
+        unsupported version. The floor is parsed from the declaration
+        itself — one source, never a second copy of the version here.
+        """
+        version = kicad_cli.version()
+        assert version != "absent", (
+            "kicad-cli is absent or broken — the slow tier is a local "
+            "sign-off step run deliberately with `pytest -m slow`"
+        )
+        installed = tuple(int(part) for part in version.split("."))
+        floor_match = re.search(r">=\s*(\d+(?:\.\d+){,2})", ORACLE_TARGET)
+        assert floor_match, f"ORACLE_TARGET {ORACLE_TARGET!r} carries no floor"
+        floor = tuple(int(part) for part in floor_match.group(1).split("."))
+        assert installed >= floor, (
+            f"installed kicad-cli {version} predates the declared "
+            f"{ORACLE_TARGET} — this tier's probes were verified against the "
+            f"floor, never against an older oracle; re-probe on the installed "
+            f"version, then move ORACLE_TARGET"
+        )
+
+    def test_parse_failure_surfaces_as_exit_3_with_no_report(self, kicad_cli, tmp_path):
+        """The status is the subprocess's own exit code, mapped in the
+        adapter (exit 3 → ``PARSE_FAILED``).
 
         Piping the oracle through a shell would mask exactly this failure
         mode (T3 pitfall): exit 3 means the board never loaded, and no
         JSON report is written for it.
         """
-        board_path = tmp_path / "truncated.kicad_pcb"
-        board_path.write_text("(kicad_pcb (version 20241229)\n")
-        report_path = tmp_path / "truncated.drc.json"
-        result = subprocess.run(
-            (*_DRC_COMMAND, "-o", str(report_path), str(board_path)),
-            capture_output=True,
-            text=True,
-            check=False,
+        outcome = kicad_cli.drc_report(
+            "(kicad_pcb (version 20241229)\n", "truncated", tmp_path
         )
-        assert result.returncode == 3
-        assert not report_path.exists()
+        assert outcome.status is OracleStatus.PARSE_FAILED
+        assert outcome.report is None
+        assert not (tmp_path / "truncated.drc.json").exists()

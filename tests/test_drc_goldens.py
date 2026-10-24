@@ -21,7 +21,8 @@ REGEN_HINT = (
 def overlapped_fixture_board():
     """The ecc83 board with two deliberate overlaps: R1+R2 co-placed
     (rect-rect) and C1+C2 co-placed (circle-rect), far enough apart that
-    the pairs don't interact — exactly two violations."""
+    the pairs don't interact — two overlaps plus each pair's coincident
+    pad shorts (#91's copper checks)."""
     return (
         build_board(load_ecc83_spec())
         .with_placement("R1", 8_000_000, 6_000_000, 0, "F.Cu")
@@ -35,6 +36,10 @@ def test_run_drc_golden():
     violations = run_drc(overlapped_fixture_board())
     assert [v.offending_refs for v in violations] == [
         ("placement:C1", "placement:C2"),
+        ("placement:R1", "placement:R2"),
+        ("placement:C1", "placement:C2"),
+        ("placement:C1", "placement:C2"),
+        ("placement:R1", "placement:R2"),
         ("placement:R1", "placement:R2"),
     ]
     assert_golden(

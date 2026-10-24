@@ -193,7 +193,7 @@ class TestRefLookupComplexity:
     The assertion is structural, not a wall clock: a counting ``str``
     tallies the ``__eq__``/``__hash__`` operations one ``with_placement``
     call performs, and the count must be flat as the board scales. The
-    pre-#38 scans cost ~1.5n equalities per call; the bound below is the
+    pre-#38 passes cost ~1.5n equalities per call; the bound below is the
     constant a dict probe pays.
     """
 
@@ -277,7 +277,7 @@ class TestPlacementValue:
 
 class TestRefReads:
     """The Board's O(1) index reads: consumers look a placement or a
-    component up, they do not scan (ADR-0001 as amended by #29)."""
+    component up, they do not iterate (ADR-0001 as amended by #29)."""
 
     def test_placement_read_hits_and_misses(self, board):
         placed = board.with_placement("R1", X, Y, 0, "F.Cu")

@@ -21,7 +21,12 @@ R1_PLACED = fresh_board().with_placement("R1", 8_000_000, 6_000_000, 0, "F.Cu")
 
 
 def test_surface_is_exactly_the_export_functions():
-    assert export.__all__ == ["DsnRules", "export_dsn", "export_pcb"]
+    assert export.__all__ == [
+        "ORACLE_TARGET",
+        "RouteSizes",
+        "export_dsn",
+        "export_pcb",
+    ]
 
 
 def test_version_header_is_first_child():
@@ -214,7 +219,7 @@ def test_back_side_mirror_is_baked_into_emitted_locals():
     board = fresh_board().with_placement("R1", 0, 0, 0, "B.Cu")
     text = export_pcb(board)
     assert '\t\t(layer "B.Cu")' in text
-    assert "\t\t\t(at -7.620000 0.000000)" in text
+    assert "\t\t\t(at -7.620000 0.000000 180)" in text
     assert "\t\t\t(start -8.670000 -1.500000)" in text
     assert "\t\t\t(end 1.050000 1.500000)" in text
 
@@ -269,7 +274,99 @@ def test_smd_pad_without_drill_and_layer_remap_on_back_side():
     back = board.with_placement("S1", 5_000_000, 5_000_000, 0, "B.Cu")
     back_text = export_pcb(back)
     assert '\t\t\t(layers "B.Cu" "B.Mask")' in back_text
-    assert "\t\t\t(at -1.000000 -1.000000)" in back_text
+    assert "\t\t\t(at -1.000000 -1.000000 180)" in back_text
+
+
+def test_roundrect_pad_emits_its_ratio():
+    # the checker prices the roundrect's shrunk core (ADR-0022) — the
+    # render must round the same corners or the oracle judges a
+    # different pad than the model checks
+    from decimal import Decimal
+
+    roundrect_ir = FootprintIR(
+        entry_name="RRTEST",
+        pads=(
+            PadIR(
+                number="1",
+                local_pos=Point(1_000_000, 0),
+                size=(1_200_000, 600_000),
+                drill=None,
+                layers=("F.Cu",),
+                shape_enum="roundrect",
+                roundrect_rratio=Decimal("0.25"),
+            ),
+        ),
+        courtyard=None,
+    )
+    spec = BoardSpec(
+        netlist_ir=NetlistIR(comps=(CompIR(ref="S1", entry_name="RRTEST"),), nets=()),
+        footprint_irs={"RRTEST": roundrect_ir},
+        outline=OUTLINE,
+        stackup=STACKUP,
+    )
+    board = build_board(spec).with_placement("S1", 5_000_000, 5_000_000, 0, "F.Cu")
+    text = export_pcb(board)
+    assert '\t\t(pad "1" smd roundrect' in text
+    assert "\t\t\t(roundrect_rratio 0.25)" in text
+
+
+def test_rect_pad_emits_no_ratio():
+    text = export_pcb(fresh_board())
+    assert "(roundrect_rratio" not in text
+
+
+def _rot_pad_board(local_rotation: int):
+    """A one-pad board whose pad carries the given library-local angle."""
+    rotated_ir = FootprintIR(
+        entry_name="ROTTEST",
+        pads=(
+            PadIR(
+                number="1",
+                local_pos=Point(1_000_000, 0),
+                size=(1_200_000, 600_000),
+                drill=None,
+                layers=("F.Cu",),
+                shape_enum="rect",
+                local_rotation=local_rotation,
+            ),
+        ),
+        courtyard=None,
+    )
+    return build_board(
+        BoardSpec(
+            netlist_ir=NetlistIR(
+                comps=(CompIR(ref="R9", entry_name="ROTTEST"),), nets=()
+            ),
+            footprint_irs={"ROTTEST": rotated_ir},
+            outline=OUTLINE,
+            stackup=STACKUP,
+        )
+    )
+
+
+def test_pad_world_orientation_composes_placement_and_local_rotation():
+    """The ADR-0022 pin: the pad's ``(at … rot)`` token is the pad's
+    *world* orientation — placement rotation + library-local rotation,
+    plus the back mirror's 180 (whose left-right flip is baked into the
+    emitted local positions) — reduced mod 360, token-less at zero,
+    pcbnew's canonical form. KiCad's loader rotates pad positions with
+    the placement but reads a missing token as world 0 without
+    inheriting the footprint's, so the world token must land complete:
+    a token-less rotated placement shorts its own pins in DRC (#73)."""
+    board = _rot_pad_board(90)
+    front0 = export_pcb(board.with_placement("R9", 5_000_000, 5_000_000, 0, "F.Cu"))
+    assert "\t\t\t(at 1.000000 0.000000 90)" in front0
+    front90 = export_pcb(board.with_placement("R9", 5_000_000, 5_000_000, 90, "F.Cu"))
+    assert "\t\t\t(at 1.000000 0.000000 180)" in front90
+    back0 = export_pcb(board.with_placement("R9", 5_000_000, 5_000_000, 0, "B.Cu"))
+    assert "\t\t\t(at -1.000000 0.000000 270)" in back0
+    back90 = export_pcb(board.with_placement("R9", 5_000_000, 5_000_000, 90, "B.Cu"))
+    assert "\t\t\t(at -1.000000 0.000000)" in back90
+
+    wrapped = export_pcb(
+        _rot_pad_board(270).with_placement("R9", 5_000_000, 5_000_000, 90, "F.Cu")
+    )
+    assert "\t\t\t(at 1.000000 0.000000)" in wrapped
 
 
 def test_text_ends_with_closing_paren_and_newline():
@@ -282,8 +379,9 @@ def test_unlocked_footprints_carry_no_lock_token():
 
 def test_locked_footprint_emits_the_lock_token():
     """``(locked yes)`` in pcbnew 10's own layout — first token line
-    inside the footprint block, before ``(layer …)``. Probed on
-    kicad-cli 10.0.6: parses, and ``IsLocked()`` reads back True.
+    inside the footprint block, before ``(layer …)``. Probed under the
+    exporter's ``ORACLE_TARGET``: parses, and ``IsLocked()`` reads back
+    True.
     """
     board = fresh_board().with_placement(
         "R1", 8_000_000, 6_000_000, 0, "F.Cu", locked=True

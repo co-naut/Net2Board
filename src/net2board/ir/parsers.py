@@ -20,19 +20,32 @@ footprint's internal name may carry a library nickname prefix
 (``"Lib:Entry"``); it is stripped exactly as netlist comp footprints are
 (the loader's nickname-strip rule).
 
-Two tolerances keep the whole committed library parseable: pad-local
-rotation angles and oval-drill widths are dropped (the spec-pinned ``PadIR``
-carries position and round-drill diameter only). No footprint referenced by
-the committed netlists uses either; unreferenced library alternatives (e.g.
-``Valve_ECC-83-2``) do. Everything else unrepresentable — drill offsets,
-off-grid coordinates, diagonal or non-line CrtYd graphics — still raises.
+Two tolerances keep every netlist-referenced footprint parseable: oval-drill
+widths are dropped (the spec-pinned ``PadIR`` carries round-drill
+diameters only), and — since #73 — pad ``local_rotation`` is carried
+rather than dropped. Pad local angles are library-local (ADR-0022: the
+fixture's SOIC-8 "270° pads" were the demo board's U7 instance angle,
+board-absolute, baked into a library file); an angle off the 90°
+multiples raises at load — the ADR-0015 posture — rather than checking
+pad geometry silently wrong. The raise retires one committed library
+file: the unreferenced ``Valve_ECC-83-2`` alternative (a valve socket
+with 18°–342° pads) no longer parses. Everything else unrepresentable —
+drill offsets, off-grid coordinates, diagonal or non-line CrtYd
+graphics — still raises.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
+from math import isqrt
 
-from net2board.boardspec import FootprintResolveError, UnsupportedCourtyardShape
+from net2board.boardspec import (
+    FootprintResolveError,
+    UnsupportedCourtyardShape,
+    UnsupportedPadPrimitive,
+    UnsupportedPadRotation,
+    UnsupportedPadType,
+)
 from net2board.geometry import Circle, Point, Rectangle, Shape
 from net2board.ir import (
     CompIR,
@@ -85,7 +98,32 @@ def parse_footprint(text: str) -> FootprintIR:
         _parse_pad(pad_form, entry_name) for pad_form in _children(form, "pad")
     )
     courtyard = _parse_courtyard(form, entry_name)
-    return FootprintIR(entry_name=entry_name, pads=pads, courtyard=courtyard)
+    return FootprintIR(
+        entry_name=entry_name,
+        pads=pads,
+        courtyard=courtyard,
+        net_tie_groups=_parse_net_tie_groups(form),
+    )
+
+
+_NET_TIE_TAG = "net_tie_pad_groups"
+
+
+def _parse_net_tie_groups(form: list) -> tuple[frozenset[str], ...]:
+    """The net-tie pad groups, KiCad's grammar (the s-expression format
+    reference): a space-separated list of quoted strings, each a
+    comma-separated pad-number list — ``"1, 2" "A,B"`` is two groups.
+    Pads in one group never violate each other (ADR-0022's second
+    exemption)."""
+    token = _child(form, _NET_TIE_TAG, required=False)
+    if token is None:
+        return ()
+    groups = []
+    for child in token[1:]:
+        if not isinstance(child, str) or not child:
+            raise ValueError(f"malformed ({_NET_TIE_TAG} …) entry")
+        groups.append(frozenset(name.strip() for name in child.split(",")))
+    return tuple(groups)
 
 
 def _parse_comp(comp_form: list) -> CompIR:
@@ -104,18 +142,32 @@ def _parse_net(net_form: list) -> NetIR:
     return NetIR(name=_string(net_form, "name"), nodes=nodes)
 
 
+_PAD_TYPES = ("smd", "thru_hole")
+_HULL_PRIMITIVES = ("gr_circle", "gr_rect", "gr_poly", "gr_line")
+
+
 def _parse_pad(pad_form: list, entry_name: str) -> PadIR:
     if (
         len(pad_form) < 4
         or not isinstance(pad_form[1], str)
+        or not isinstance(pad_form[2], str)
         or not isinstance(pad_form[3], str)
     ):
         raise ValueError(f"malformed pad in footprint {entry_name!r}")
-    number, shape_enum = pad_form[1], pad_form[3]
+    number, pad_type, shape_enum = pad_form[1], pad_form[2], pad_form[3]
+    if pad_type not in _PAD_TYPES:
+        raise UnsupportedPadType(
+            entry_name=entry_name, pad_number=number, pad_type=pad_type
+        )
     at_form = _child(pad_form, "at")
     size_form = _child(pad_form, "size")
     drill_form = _child(pad_form, "drill", required=False)
     layers_form = _child(pad_form, "layers")
+    local_rotation = int(at_form[3]) % 360 if len(at_form) > 3 else 0
+    if local_rotation % 90 != 0:
+        raise UnsupportedPadRotation(
+            entry_name=entry_name, pad_number=number, angle=local_rotation
+        )
     return PadIR(
         number=number,
         local_pos=Point(_mm_to_nm(at_form[1]), _mm_to_nm(at_form[2])),
@@ -123,7 +175,112 @@ def _parse_pad(pad_form: list, entry_name: str) -> PadIR:
         drill=_parse_drill(drill_form, number, entry_name),
         layers=tuple(token for token in layers_form[1:] if isinstance(token, str)),
         shape_enum=shape_enum,
+        local_rotation=local_rotation,
+        roundrect_rratio=_parse_roundrect_ratio(pad_form),
+        hull=_parse_pad_hull(pad_form, number, shape_enum, entry_name),
     )
+
+
+def _parse_roundrect_ratio(pad_form: list) -> Decimal | None:
+    """The corner ratio as the library states it — ``None`` when absent
+    (the capsule defaults it to KiCad's own 0.25)."""
+    token = _child(pad_form, "roundrect_rratio", required=False)
+    if token is None:
+        return None
+    try:
+        return Decimal(token[1])
+    except ArithmeticError:
+        raise ValueError(f"malformed (roundrect_rratio …) form: {token!r}") from None
+
+
+def _parse_pad_hull(
+    pad_form: list, number: str, shape_enum: str, entry_name: str
+) -> Rectangle | None:
+    """A ``custom`` pad's copper extent: the pad-local bounding rectangle
+    of its primitives (ADR-0022 — the anchor box alone under-covers; the
+    JP solder jumpers' real copper reaches ±0.75 mm where the anchor
+    reaches ±0.25). Stroke widths grow the hull, non-integer radii ceil —
+    never under-cover; an unparseable primitive kind raises at load."""
+    if shape_enum != "custom":
+        return None
+    primitives = _child(pad_form, "primitives", required=False)
+    if primitives is None:
+        return None
+    boxes = [
+        _hull_box(primitive, number, entry_name)
+        for primitive in primitives[1:]
+        if isinstance(primitive, list) and primitive
+    ]
+    if not boxes:
+        return None
+    min_x = min(box.min.x for box in boxes)
+    min_y = min(box.min.y for box in boxes)
+    max_x = max(box.max.x for box in boxes)
+    max_y = max(box.max.y for box in boxes)
+    return Rectangle(min=Point(min_x, min_y), max=Point(max_x, max_y))
+
+
+def _hull_box(primitive: list, number: str, entry_name: str) -> Rectangle:
+    """One primitive's pad-local bounding rectangle, grown by half its
+    stroke width when the primitive carries one — the stroke is copper
+    too, and a stroke never leaves the vertex box grown by half its
+    width (the never-under-cover claim)."""
+    kind = primitive[0]
+    if kind not in _HULL_PRIMITIVES:
+        raise UnsupportedPadPrimitive(
+            entry_name=entry_name, pad_number=number, primitive=kind
+        )
+    if kind == "gr_circle":
+        center = _point(primitive, "center")
+        end = _point(primitive, "end")
+        radius_sq = (end.x - center.x) ** 2 + (end.y - center.y) ** 2
+        radius = _ceil_isqrt(radius_sq)
+        box = Rectangle(
+            min=Point(center.x - radius, center.y - radius),
+            max=Point(center.x + radius, center.y + radius),
+        )
+    elif kind == "gr_rect":
+        box = Rectangle.from_corners(
+            _point(primitive, "start"), _point(primitive, "end")
+        )
+    elif kind == "gr_poly":
+        pts_form = _child(primitive, "pts")
+        points = [
+            Point(_mm_to_nm(pts[1]), _mm_to_nm(pts[2]))
+            for pts in _children(pts_form, "xy")
+        ]
+        if not points:
+            raise ValueError(
+                f"pad {number!r} of footprint {entry_name!r}: a gr_poly "
+                f"primitive without points"
+            )
+        box = Rectangle(
+            min=Point(min(p.x for p in points), min(p.y for p in points)),
+            max=Point(max(p.x for p in points), max(p.y for p in points)),
+        )
+    else:
+        box = Rectangle.from_corners(
+            _point(primitive, "start"), _point(primitive, "end")
+        )
+    width_form = _child(primitive, "width", required=False)
+    if width_form is None:
+        return box
+    half_stroke = _ceil_half(_mm_to_nm(width_form[1]))
+    return Rectangle(
+        min=Point(box.min.x - half_stroke, box.min.y - half_stroke),
+        max=Point(box.max.x + half_stroke, box.max.y + half_stroke),
+    )
+
+
+def _ceil_isqrt(square: int) -> int:
+    """⌈√square⌉ — the smallest integer radius covering the circle."""
+    root = isqrt(square)
+    return root if root * root == square else root + 1
+
+
+def _ceil_half(value: int) -> int:
+    """⌈value/2⌉ — a half-nanometre stroke half-width ceils."""
+    return (value + 1) // 2
 
 
 def _parse_drill(drill_form: list | None, number: str, entry_name: str) -> int | None:

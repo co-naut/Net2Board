@@ -12,9 +12,10 @@ defining ``end`` point for export emission (ADR-0006 as amended by ADR-0010).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import NamedTuple
 
-from net2board.geometry import Point, Shape
+from net2board.geometry import Point, Rectangle, Shape
 
 __all__ = [
     "CompIR",
@@ -89,7 +90,12 @@ class PadIR:
 
     ``shape_enum`` is the opaque KiCad pad-shape string (``circle``, ``rect``,
     ``oval``, ...) — carried to the exporter verbatim, never interpreted as
-    geometry (ADR-0006).
+    geometry (ADR-0006). ``local_rotation`` is the pad's rotation inside the
+    footprint frame as the library file states it, degrees, ``[0, 360)``,
+    restricted to the 90° multiples at load (ADR-0022) — composed into the
+    pad's world ``(at … rot)`` token by the ``.kicad_pcb`` writer (angles
+    are library-local; the #73 "KiCad drops the angle" reading was the
+    board-absolute demo fixture misread).
     """
 
     number: str
@@ -98,6 +104,9 @@ class PadIR:
     drill: int | None
     layers: tuple[str, ...]
     shape_enum: str
+    local_rotation: int = 0
+    roundrect_rratio: Decimal | None = None
+    hull: Rectangle | None = None
 
 
 @dataclass(frozen=True)
@@ -106,11 +115,15 @@ class FootprintIR:
 
     ``courtyard`` is ``None`` when the footprint has no courtyard graphics —
     a valid state that the overlap check skips (ADR-0006).
+    ``net_tie_pad_groups`` is the footprint's net-tie groups (KiCad's
+    grammar: each quoted string a comma-separated pad-number list); pads
+    sharing a group never violate each other (ADR-0022).
     """
 
     entry_name: str
     pads: tuple[PadIR, ...]
     courtyard: Shape | None
+    net_tie_groups: tuple[frozenset[str], ...] = ()
 
 
 from net2board.ir.parsers import parse_footprint, parse_netlist
