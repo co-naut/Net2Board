@@ -11,6 +11,8 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ADR_DIR = REPO_ROOT / "docs" / "adr"
 
@@ -91,7 +93,10 @@ def test_adr_numbers_are_unique():
 
 def test_adr_numbers_are_gap_free():
     numbers = sorted(_numbered_adrs())
-    assert numbers, "no numbered ADR files found"
+    if not numbers:
+        pytest.skip(
+            "no numbered ADR files — the public tree carries no docs (ADR-0027)"
+        )
     gaps = [n for n in range(1, numbers[-1] + 1) if n not in numbers]
     assert not gaps, f"missing from the ADR sequence: {gaps}"
 
