@@ -1,6 +1,6 @@
 [project]
 name = "net2board"
-version = "0.3.0"
+version = "0.3.1"
 description = "Model the physical realization of a circuit - netlist to board layout - as a library for an external AI orchestrator."
 readme = "README.md"
 license = "MIT"

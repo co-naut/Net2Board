@@ -24,7 +24,7 @@ uv run pytest               # fast-tier tests
 
 ## Measured
 
-Both ratios come from one run on one machine — self-normalizing, and asserted ≥1,000× by the slow-tier tests (`uv run pytest -m slow`; requires kicad-cli). The routing beats are a separate opt-in tier (`uv run pytest -m route`; needs java, the sha-pinned Freerouting jar, system pcbnew, and kicad-cli — the human baseline re-measures only under `NET2BOARD_REMEASURE_HUMAN=1`). Dated receipt with full provenance: [docs/results/2026-10-25-m3-signoff.md](docs/results/2026-10-25-m3-signoff.md) (the runs it supersedes: [2026-10-24-m3-pad-checks.md](docs/results/2026-10-24-m3-pad-checks.md) — the pad-checks re-pin — which supersedes [2026-10-13-per-candidate-remeasure.md](docs/results/2026-10-13-per-candidate-remeasure.md) — the linearity receipt — which supersedes [2026-10-05-m2-index-amendment.md](docs/results/2026-10-05-m2-index-amendment.md), which supersedes [2026-10-05-m2-placements-fix.md](docs/results/2026-10-05-m2-placements-fix.md), [2026-10-01-m2-order-amendment.md](docs/results/2026-10-01-m2-order-amendment.md), [2026-10-01-m2.md](docs/results/2026-10-01-m2.md)).
+Both ratios come from one run on one machine — self-normalizing, and asserted ≥1,000× by the slow-tier tests (`uv run pytest -m slow`; requires kicad-cli). The routing beats are a separate opt-in tier (`uv run pytest -m route`; needs java, the sha-pinned Freerouting jar, system pcbnew, and kicad-cli — the human baseline re-measures only under `NET2BOARD_REMEASURE_HUMAN=1`).
 
 | scope | engine | wrapper (kicad-cli per candidate) | ratio |
 |---|---|---|---|
@@ -33,7 +33,7 @@ Both ratios come from one run on one machine — self-normalizing, and asserted 
 
 ## Routed
 
-The M3 benchmark (ADR-0024): both placements routed under identical rules — `DesignRules()` 0.2/0.5 mm + `RouteSizes()` 0.25/0.8 mm, the same sha-pinned freerouting-2.4.1 jar and arguments. Enforced: the unrouted comparison (solver ≤ human) and zero enforced copper findings before routing, under both judges; after routing, each enforced type reads no worse than the human board's row (here: cleaner on all four). Reported, never enforced: the COMPLETED states, the violation tallies, the walls. Reproduce with `uv run pytest -m "slow or route"` (~50 min with the human gate off). Full provenance: [the dated receipt](docs/results/2026-10-25-m3-signoff.md).
+The M3 benchmark (ADR-0024): both placements routed under identical rules — `DesignRules()` 0.2/0.5 mm + `RouteSizes()` 0.25/0.8 mm, the same sha-pinned freerouting-2.4.1 jar and arguments. Enforced: the unrouted comparison (solver ≤ human) and zero enforced copper findings before routing, under both judges; after routing, each enforced type reads no worse than the human board's row (here: cleaner on all four). Reported, never enforced: the COMPLETED states, the violation tallies, the walls. Reproduce with `uv run pytest -m "slow or route"` (~50 min with the human gate off).
 
 | fixture | placement | state | unrouted | router violations | enforced post-route (shorts/crossings/clearance/edge) | router wall |
 |---|---|---|---|---|---|---|

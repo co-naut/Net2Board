@@ -40,10 +40,10 @@ def _numbered_adrs() -> dict[int, list[Path]]:
     return found
 
 
-def _markdown_files() -> Iterator[Path]:
-    """Every committed markdown file: the walk skips the untracked
-    directories, whose third-party prose is not ours to guard."""
-    for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
+def _markdown_files(root: Path = REPO_ROOT) -> Iterator[Path]:
+    """Every committed markdown file under ``root``: the walk skips the
+    untracked directories, whose third-party prose is not ours to guard."""
+    for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if name not in SKIP_DIRS]
         for name in filenames:
             if name.endswith(".md"):
@@ -125,11 +125,19 @@ def test_markdown_prose_is_unwrapped():
     )
 
 
-def test_referenced_repo_paths_exist():
+def unresolved_path_refs(root: Path) -> list[str]:
+    """``file: ref`` for every ``docs/`` or ``src/net2board/`` reference in
+    the markdown under ``root`` that does not resolve inside ``root``. The
+    carve-export test runs this over the archive — one definition, #65."""
     missing = []
-    for path in _markdown_files():
+    for path in _markdown_files(root):
         for match in PATH_REF.finditer(_outside_fence_text(path)):
             ref = match.group(1).rstrip(".")
-            if not (REPO_ROOT / ref).exists():
-                missing.append(f"{path.relative_to(REPO_ROOT)}: {ref}")
+            if not (root / ref).exists():
+                missing.append(f"{path.relative_to(root)}: {ref}")
+    return missing
+
+
+def test_referenced_repo_paths_exist():
+    missing = unresolved_path_refs(REPO_ROOT)
     assert not missing, f"referenced paths that do not exist: {missing}"
